@@ -1,0 +1,17 @@
+2025-11-06 16:20:47 - INFO - INÍCIO DO DISPARO IMEDIATO: Alvo: ['teste'], Total de IDs: 2
+2025-11-06 16:20:49 - INFO - SUCESSO: Mensagem enviada para o ID: 564499644
+2025-11-06 16:20:50 - ERROR - FALHA: Erro ao enviar para o ID 14852366. Detalhes: 400 Client Error: Bad Request for url: https://api.telegram.org/bot8586446411:AAH_jXK0Yv6h64gRLhoK3kv2kJo4mG5x3LE/sendPhoto
+2025-11-06 16:20:50 - INFO - FIM DO DISPARO: Enviados: 1, Falhas: 1
+2025-11-06 16:21:51 - INFO - AGENDAMENTO CRIADO: Título: Opa, Data: 2025-11-06 16:23:00
+2025-11-06 16:24:38 - INFO - AGENDAMENTO CRIADO: Título: opa, Data: 2025-11-06 16:26:00
+2025-11-06 16:27:03 - INFO - AGENDAMENTO CRIADO: Título: teste, Data: 2025-11-06 16:28:00
+2025-11-06 16:29:45 - INFO - AGENDAMENTO CRIADO: Título: teste, Data: 2025-11-06 16:31:00
+2025-11-06 16:44:53 - INFO - INÍCIO DO DISPARO IMEDIATO: Alvo: ['teste'], Total de IDs: 2
+2025-11-06 16:44:55 - INFO - SUCESSO: Mensagem enviada para o ID: 564499644
+2025-11-06 16:44:56 - ERROR - FALHA: Erro ao enviar para o ID 14852366. Detalhes: 400 Client Error: Bad Request for url: https://api.telegram.org/bot8586446411:AAH_jXK0Yv6h64gRLhoK3kv2kJo4mG5x3LE/sendPhoto
+2025-11-06 16:44:56 - INFO - FIM DO DISPARO: Enviados: 1, Falhas: 1
+2025-11-06 16:46:25 - INFO - INÍCIO DO DISPARO IMEDIATO: Alvo: ['Dedicados almoço'], Total de IDs: 1
+2025-11-06 16:46:27 - INFO - SUCESSO: Mensagem enviada para o ID: 564499644
+2025-11-06 16:46:27 - INFO - FIM DO DISPARO: Enviados: 1, Falhas: 0
+2025-11-06 16:47:44 - INFO - AGENDAMENTO CRIADO: Título: Mensagem promo 11111, Data: 2025-11-06 16:56:00
+2025-11-06 16:48:00 - INFO - AGENDAMENTO CANCELADO: ID: 305ecb88-7d33-44ec-8651-e1a6e5794487, Título: Mensagem promo 11111

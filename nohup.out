@@ -1,0 +1,232 @@
+/home/charle/telegram_app/venv_telegram/bin/python: No module named streamlit
+
+Collecting usage statistics. To deactivate, set browser.gatherUsageStats to false.
+
+
+  You can now view your Streamlit app in your browser.
+
+  URL: http://0.0.0.0:8501
+
+2025-11-06 16:07:55.097 Uncaught app execution
+Traceback (most recent call last):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 669, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+  File "/home/charle/telegram_app/infor_telegram.py", line 251, in <module>
+    main()
+  File "/home/charle/telegram_app/infor_telegram.py", line 131, in main
+    if "Erro de Conexão" in lista_destinatarios or "Erro de Colunas" in lista_destinatarios:
+TypeError: argument of type 'NoneType' is not iterable
+2025-11-06 16:10:13.844 Uncaught app execution
+Traceback (most recent call last):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 669, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+  File "/home/charle/telegram_app/infor_telegram.py", line 251, in <module>
+    main()
+  File "/home/charle/telegram_app/infor_telegram.py", line 131, in main
+    if "Erro de Conexão" in lista_destinatarios or "Erro de Colunas" in lista_destinatarios:
+TypeError: argument of type 'NoneType' is not iterable
+2025-11-06 16:11:51.480 Uncaught app execution
+Traceback (most recent call last):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 669, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+  File "/home/charle/telegram_app/infor_telegram.py", line 251, in <module>
+    main()
+  File "/home/charle/telegram_app/infor_telegram.py", line 131, in main
+    if "Erro de Conexão" in lista_destinatarios or "Erro de Colunas" in lista_destinatarios:
+TypeError: argument of type 'NoneType' is not iterable
+2025-11-06 16:11:53.422 Uncaught app execution
+Traceback (most recent call last):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 669, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+  File "/home/charle/telegram_app/infor_telegram.py", line 251, in <module>
+    main()
+  File "/home/charle/telegram_app/infor_telegram.py", line 131, in main
+    if "Erro de Conexão" in lista_destinatarios or "Erro de Colunas" in lista_destinatarios:
+TypeError: argument of type 'NoneType' is not iterable
+2025-11-06 16:11:54.368 Uncaught app execution
+Traceback (most recent call last):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 669, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+  File "/home/charle/telegram_app/infor_telegram.py", line 251, in <module>
+    main()
+  File "/home/charle/telegram_app/infor_telegram.py", line 131, in main
+    if "Erro de Conexão" in lista_destinatarios or "Erro de Colunas" in lista_destinatarios:
+TypeError: argument of type 'NoneType' is not iterable
+  Stopping...
+
+Collecting usage statistics. To deactivate, set browser.gatherUsageStats to false.
+
+
+  You can now view your Streamlit app in your browser.
+
+  URL: http://0.0.0.0:8501
+
+2025-11-06 16:13:45.800 Uncaught app execution
+Traceback (most recent call last):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 669, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+  File "/home/charle/telegram_app/infor_telegram.py", line 251, in <module>
+    main()
+  File "/home/charle/telegram_app/infor_telegram.py", line 131, in main
+    if "Erro de Conexão" in lista_destinatarios or "Erro de Colunas" in lista_destinatarios:
+TypeError: argument of type 'NoneType' is not iterable
+2025-11-06 16:15:19.374 Uncaught app execution
+Traceback (most recent call last):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 669, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+  File "/home/charle/telegram_app/infor_telegram.py", line 251, in <module>
+    main()
+  File "/home/charle/telegram_app/infor_telegram.py", line 131, in main
+    if "Erro de Conexão" in lista_destinatarios or "Erro de Colunas" in lista_destinatarios:
+TypeError: argument of type 'NoneType' is not iterable
+2025-11-06 16:15:21.912 Uncaught app execution
+Traceback (most recent call last):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 669, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+  File "/home/charle/telegram_app/infor_telegram.py", line 251, in <module>
+    main()
+  File "/home/charle/telegram_app/infor_telegram.py", line 131, in main
+    if "Erro de Conexão" in lista_destinatarios or "Erro de Colunas" in lista_destinatarios:
+TypeError: argument of type 'NoneType' is not iterable
+
+Collecting usage statistics. To deactivate, set browser.gatherUsageStats to false.
+
+2025-11-06 16:16:29.107 Port 8501 is already in use
+2025-11-06 16:16:33.064 Uncaught app execution
+Traceback (most recent call last):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 669, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+  File "/home/charle/telegram_app/infor_telegram.py", line 251, in <module>
+    main()
+  File "/home/charle/telegram_app/infor_telegram.py", line 131, in main
+    if "Erro de Conexão" in lista_destinatarios or "Erro de Colunas" in lista_destinatarios:
+TypeError: argument of type 'NoneType' is not iterable
+2025-11-06 16:18:17.126 Uncaught app execution
+Traceback (most recent call last):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 669, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+  File "/home/charle/telegram_app/infor_telegram.py", line 251, in <module>
+    main()
+  File "/home/charle/telegram_app/infor_telegram.py", line 131, in main
+    if "Erro de Conexão" in lista_destinatarios or "Erro de Colunas" in lista_destinatarios:
+TypeError: argument of type 'NoneType' is not iterable
+2025-11-06 16:21:51.067 Uncaught app execution
+Traceback (most recent call last):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 669, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+  File "/home/charle/telegram_app/infor_telegram.py", line 360, in <module>
+    main()
+  File "/home/charle/telegram_app/infor_telegram.py", line 322, in main
+    st.experimental_rerun()
+AttributeError: module 'streamlit' has no attribute 'experimental_rerun'
+2025-11-06 16:24:38.557 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2025-11-06 16:24:38.563 Uncaught app execution
+Traceback (most recent call last):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 669, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+  File "/home/charle/telegram_app/infor_telegram.py", line 360, in <module>
+    main()
+  File "/home/charle/telegram_app/infor_telegram.py", line 345, in main
+    if st.button("❌ Cancelar Agendamento", type="danger"):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/metrics_util.py", line 447, in wrapped_func
+    result = non_optional_func(*args, **kwargs)
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/elements/widgets/button.py", line 261, in button
+    raise StreamlitAPIException(
+streamlit.errors.StreamlitAPIException: The type argument to st.button must be "primary", "secondary", or "tertiary". 
+The argument passed was "danger".
+  Stopping...
+
+Collecting usage statistics. To deactivate, set browser.gatherUsageStats to false.
+
+
+  You can now view your Streamlit app in your browser.
+
+  URL: http://0.0.0.0:8501
+
+2025-11-06 16:27:03.539 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2025-11-06 16:27:03.546 Uncaught app execution
+Traceback (most recent call last):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 669, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+  File "/home/charle/telegram_app/infor_telegram.py", line 360, in <module>
+    main()
+  File "/home/charle/telegram_app/infor_telegram.py", line 345, in main
+    if st.button("❌ Cancelar Agendamento", type="danger"):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/metrics_util.py", line 447, in wrapped_func
+    result = non_optional_func(*args, **kwargs)
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/elements/widgets/button.py", line 261, in button
+    raise StreamlitAPIException(
+streamlit.errors.StreamlitAPIException: The type argument to st.button must be "primary", "secondary", or "tertiary". 
+The argument passed was "danger".
+2025-11-06 16:29:45.972 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2025-11-06 16:47:44.343 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2025-11-06 16:48:00.720 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2025-11-06 16:48:00.777 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2025-11-07 07:54:21.503 Uncaught app execution
+Traceback (most recent call last):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 669, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+  File "/home/charle/telegram_app/infor_telegram.py", line 4, in <module>
+    from gspread.auth import ServiceAccountCredentials
+ImportError: cannot import name 'ServiceAccountCredentials' from 'gspread.auth' (/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/gspread/auth.py)
+2025-11-07 07:54:23.894 Uncaught app execution
+Traceback (most recent call last):
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 669, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+  File "/home/charle/telegram_app/infor_telegram.py", line 4, in <module>
+    from gspread.auth import ServiceAccountCredentials
+ImportError: cannot import name 'ServiceAccountCredentials' from 'gspread.auth' (/home/charle/telegram_app/venv_telegram/lib/python3.10/site-packages/gspread/auth.py)
