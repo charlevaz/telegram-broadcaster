@@ -11,20 +11,7 @@ from datetime import datetime, timedelta
 import hashlib 
 import time 
 from urllib.parse import quote 
-import os # ⬅️ NOVO: Necessário para checar variáveis de ambiente do Streamlit Cloud
-from selenium.common.exceptions import WebDriverException # Necessário para tratar o erro
-
-# --- Importações condicionais para evitar crash no Streamlit Cloud ---
-# No Streamlit Cloud, estas importações podem falhar, mas o código as ignora.
-try:
-    from selenium import webdriver 
-    from selenium.webdriver.chrome.service import Service
-    from webdriver_manager.chrome import ChromeDriverManager
-except ImportError:
-    webdriver = None
-    Service = None
-    ChromeDriverManager = None
-    logger.warning("Selenium/WebDriver não está instalado ou o ambiente não suporta.")
+# ❌ REMOVIDAS AS IMPORTAÇÕES DO SELENIUM PARA EVITAR CRASH NO CLOUD
 
 # ====================================================================
 # 🚨 1. CONFIGURAÇÃO E LOGGING
@@ -53,15 +40,8 @@ USER_CREDENTIALS = {
     "admin": "admin456"    
 }
 
-# 🛑 CONFIGURAÇÕES DO WHATSAPP NÃO OFICIAL
-WHATSAPP_DELAY_SECONDS = 8
-# O path deve existir no servidor Ubuntu (não no Streamlit Cloud)
-WHATSAPP_SESSION_PATH = '/home/charle/whatsapp_session' 
-
-if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
-if 'PERMANENT_LOGIN' not in st.session_state:
-    st.session_state['logged_in'] = st.session_state.get('PERMANENT_LOGIN', False)
+if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
+if 'PERMANENT_LOGIN' not in st.session_state: st.session_state['logged_in'] = st.session_state.get('PERMANENT_LOGIN', False)
 
 # ====================================================================
 # 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO
@@ -69,12 +49,9 @@ if 'PERMANENT_LOGIN' not in st.session_state:
 
 def get_gspread_client():
     """Retorna o cliente gspread autenticado."""
-    
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        
         if 'google_service_account' in st.secrets:
-            # Autenticação via Streamlit Secrets (Cloud)
             creds_info = dict(st.secrets["google_service_account"]) 
             if isinstance(creds_info, dict):
                  creds_info['private_key'] = creds_info['private_key'].replace('\\n', '\n')
@@ -82,11 +59,9 @@ def get_gspread_client():
             else:
                  creds = Credentials.from_service_account_info(json.loads(creds_info), scopes=DEFAULT_SCOPES)
         else:
-            # Autenticação via arquivo local (Ubuntu Server)
             creds = Credentials.from_json_keyfile_name(CREDENTIALS_FILE, scopes=DEFAULT_SCOPES)
             
         return gspread.authorize(creds)
-        
     except Exception as e:
         logger.critical(f"Falha na Autenticação GSpread: {e}")
         st.error(f"ERRO DE AUTENTICAÇÃO CRÍTICA: {e}") 
@@ -111,23 +86,19 @@ def carregar_listas_db(worksheet_name):
         id_col = 'ids' if worksheet_name == WORKSHEET_NAME_TELEGRAM else 'numero'
 
         if 'lista' in df.columns and 'nome' in df.columns and id_col in df.columns:
-            
             for index, row in df.iterrows():
                 nome_lista = str(row['lista']).strip()
                 destinatario_id = str(row[id_col]).strip()
                 nome_destinatario = str(row['nome']).strip()
                 
                 if nome_lista and destinatario_id:
-                    if nome_lista not in DESTINATARIOS:
-                        DESTINATARIOS[nome_lista] = []
-                    
+                    if nome_lista not in DESTINATARIOS: DESTINATARIOS[nome_lista] = []
                     DESTINATARIOS[nome_lista].append({'id': destinatario_id, 'nome': nome_destinatario})
             
             return DESTINATARIOS
         else:
             st.error(f"ERRO DE COLUNAS na aba '{worksheet_name}'. Obrigatórias: 'lista', 'nome', e '{id_col}'.")
             return {}
-
     except Exception as e:
         st.error(f"ERRO NA LEITURA DA PLANILHA '{worksheet_name}': {e}") 
         logger.critical(f"Falha ao carregar a lista de destinatários ({worksheet_name}): {e}")
@@ -136,18 +107,16 @@ def carregar_listas_db(worksheet_name):
 def substituir_variaveis(mensagem_original, nome_destinatario):
     """Substitui as variáveis {nome} ou @nome na mensagem."""
     nome = nome_destinatario if nome_destinatario else "Cliente"
-    
     mensagem_processada = mensagem_original.replace("{nome}", nome)
     mensagem_processada = mensagem_processada.replace("@nome", nome)
-    
     return mensagem_processada
 
-# --- Funções de Envio de API (Telegram) ---
+# --- Funções de Envio de API ---
+
 def enviar_mensagem_telegram_api(chat_id, mensagem_processada):
     """Envia mensagem de texto via API Telegram."""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = { 'chat_id': chat_id, 'text': mensagem_processada, 'parse_mode': 'Markdown' }
-    
     try:
         response = requests.post(url, data=payload); response.raise_for_status()
         return True, response.json()
@@ -158,59 +127,27 @@ def enviar_foto_telegram_api(chat_id, foto_bytes, legenda_processada):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     files = {'photo': ('imagem.jpg', foto_bytes, 'image/jpeg')} 
     data = {'chat_id': chat_id}
-    
     if legenda_processada: data['caption'] = legenda_processada; data['parse_mode'] = 'Markdown'
-    
     try:
         response = requests.post(url, files=files, data=data); response.raise_for_status()
         return True, response.json()
     except requests.exceptions.RequestException as e: return False, str(e)
 
-# -------------------------------------------------------------
-# ⚠️ FUNÇÕES DO WHATSAPP (SELENIUM - ALTO RISCO)
-# -------------------------------------------------------------
+# ⚠️ Funções do WhatsApp (Placeholder no Cloud, Requer Selenium no Ubuntu)
 
 def get_whatsapp_driver():
-    """Configura e retorna o driver do Selenium para WhatsApp Web."""
-    
-    # 🔴 NOVO: Se estiver no Streamlit Cloud, bloqueia a inicialização do driver.
-    if os.environ.get('STREAMLIT_SERVER_USER'):
-        raise WebDriverException("O Streamlit Cloud não suporta automação de navegador (Selenium). Use um servidor dedicado.")
-
-    if webdriver is None or ChromeDriverManager is None:
-        raise WebDriverException("Dependências do Selenium não instaladas ou não suportadas.")
-        
-    options = webdriver.ChromeOptions()
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument(f"user-data-dir={WHATSAPP_SESSION_PATH}")
-    options.add_argument("--verbose") 
-
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=options)
-    return driver
+    """Tenta configurar o driver (Só funciona fora do Streamlit Cloud)."""
+    # 🔴 Esta função causou o crash 127 no Cloud.
+    # O código real de inicialização do driver foi movido para o servidor Ubuntu.
+    raise WebDriverException("A automação do WhatsApp requer o Chrome Driver e não é suportada neste ambiente.")
 
 def enviar_mensagem_whatsapp_api(driver, numero_destinatario, mensagem_processada, tem_imagem):
-    """Executa o envio via automação do WhatsApp Web (Selenium)."""
-    
-    numero_limpo = numero_destinatario.replace('+', '').strip()
-    mensagem_codificada = quote(mensagem_processada)
-    
-    url = f'https://web.whatsapp.com/send?phone={numero_limpo}&text={mensagem_codificada}'
-    
-    try:
-        driver.get(url)
-        time.sleep(5) 
-        
-        # ⚠️ Lógica de envio real (depende de By.XPATH) seria implementada aqui.
-        
-        time.sleep(WHATSAPP_DELAY_SECONDS) 
-        
-        return True, "Enviado/Simulado (Verifique o WhatsApp Web)."
-    
-    except Exception as e:
-        logger.error(f"Erro Selenium/WhatsApp Web para {numero_destinatario}: {e}")
-        return False, f"Falha na automação: {e}"
+    """Placeholder de envio WhatsApp."""
+    logger.warning("Simulação: Tentativa de envio WhatsApp. Ação bloqueada.")
+    if tem_imagem: return False, "Placeholder: Envio de imagem não implementado."
+    if numero_destinatario.endswith('999999999'): return True, "Simulado com sucesso."
+    return False, "Placeholder: API de WhatsApp não conectada/implementada."
+
 
 # --- Funções de Disparo (Central) ---
 
@@ -223,36 +160,21 @@ def processar_disparo(canal, listas_selecionadas, mensagem_original, uploaded_fi
         file_bytes = uploaded_file.read() 
     
     destinatarios_raw = []
-    for nome_lista in listas_selecionadas:
-        destinatarios_raw.extend(listas_dados.get(nome_lista, []))
-
+    for nome_lista in listas_selecionadas: destinatarios_raw.extend(listas_dados.get(nome_lista, []))
     destinatarios = pd.DataFrame(destinatarios_raw).drop_duplicates(subset=['id']).to_dict('records')
-    
     if not destinatarios: st.error("Nenhum destinatário encontrado."); return
 
-    total_enviados = 0
-    erros = []
-    driver = None # Inicializa o driver fora do try
+    total_enviados = 0; erros = []; driver = None
 
     if canal == 'WhatsApp':
-        try:
-            driver = get_whatsapp_driver() # ⬅️ Tenta iniciar o driver
-            st.info("WhatsApp Web iniciado. Escaneie o QR CODE se for necessário.")
-            driver.get('https://web.whatsapp.com/')
-            time.sleep(15) # Dê tempo para o usuário logar/carregar
-        except WebDriverException as e:
-            st.error(f"Falha no WhatsApp: {e}. O envio não será realizado.")
-            return # Sai da função se o driver falhar
+        st.error("ERRO: O disparo do WhatsApp não é suportado no Streamlit Cloud. Execute no seu Servidor Ubuntu.")
+        return # Sai da função imediatamente no Cloud
 
     try:
         with st.spinner(f'Iniciando envio {canal} para {len(destinatarios)} destinatários...'):
-            
             progress_bar = st.progress(0, text="Preparando envio...")
-            
             for i, dest in enumerate(destinatarios):
-                chat_id = dest['id']
-                nome_destinatario = dest['nome']
-                
+                chat_id = dest['id']; nome_destinatario = dest['nome']
                 mensagem_processada = substituir_variaveis(mensagem_original, nome_destinatario)
                 
                 if canal == 'Telegram':
@@ -261,31 +183,26 @@ def processar_disparo(canal, listas_selecionadas, mensagem_original, uploaded_fi
                     else:
                         sucesso, resultado = enviar_mensagem_telegram_api(chat_id, mensagem_processada)
                 
-                elif canal == 'WhatsApp':
-                    sucesso, resultado = enviar_mensagem_whatsapp_api(driver, chat_id, mensagem_processada, file_bytes is not None)
-                
-                if sucesso: total_enviados += 1
-                else: erros.append(f"ID {chat_id} ({nome_destinatario}): Falha -> {resultado}"); 
-                
-                logger.info(f"FIM: {canal} para {chat_id}. Status: {'SUCESSO' if sucesso else 'FALHA'}")
+                # O canal WhatsApp é bloqueado acima, o código real está no Ubuntu.
 
-                percentual = (i + 1) / len(destinatarios)
-                progress_bar.progress(percentual, text=f"Enviando... {i + 1} de {len(destinatarios)}")
+                if sucesso: total_enviados += 1
+                else: erros.append(f"ID {chat_id} ({nome_destinatario}): Falha -> {resultado}"); logger.info(f"FIM: {canal} para {chat_id}. Status: {'SUCESSO' if sucesso else 'FALHA'}")
+
+                percentual = (i + 1) / len(destinatarios); progress_bar.progress(percentual, text=f"Enviando... {i + 1} de {len(destinatarios)}")
     
     finally:
-        if driver: driver.quit() # Garante que o navegador seja fechado
+        if driver: driver.quit()
 
-    progress_bar.empty()
-    st.success(f"✅ Disparo {canal} concluído! **{total_enviados}** mensagens enviadas com sucesso.")
+    progress_bar.empty(); st.success(f"✅ Disparo {canal} concluído! **{total_enviados}** mensagens enviadas com sucesso.")
     logger.info(f"FIM DO DISPARO {canal}: Enviados: {total_enviados}, Falhas: {len(erros)}")
-    
     if erros:
         st.warning(f"⚠️ {len(erros)} falhas de envio. Detalhes no Log.")
         for erro in erros[:3]: st.code(erro)
             
     return total_enviados
 
-# --- Funções Main e Inicialização (Mantidas) ---
+
+# --- Funções Main e Inicialização ---
 def login_form():
     """Exibe o formulário de login e processa a autenticação."""
     
@@ -345,7 +262,6 @@ def app_ui():
         st.error("Falha ao carregar a lista do Telegram. Verifique as credenciais.")
         return 
     
-    # 3. VERIFICAÇÃO DE ERROS DE COLUNA E FLUXO
     if "Erro de Colunas" in listas_telegram_data:
         st.error("Erro fatal: Colunas da lista TELEGRAM estão incorretas. Verifique 'lista', 'nome', 'ids'.")
         return 
@@ -387,7 +303,7 @@ def app_ui():
     # --- ABA 2: WHATSAPP ---
     with tab_whatsapp:
         st.markdown('### <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/24px-WhatsApp_logo.svg.png" style="width:24px; vertical-align:middle;"> Disparo WhatsApp (Não Oficial)', unsafe_allow_html=True)
-        st.warning("⚠️ RISCO DE BLOQUEIO: Este método não usa a API oficial. O envio deve ser moderado, e o número precisa estar logado no WhatsApp Web.")
+        st.warning("🔴 AÇÃO NECESSÁRIA: Este recurso requer o Selenium e não funciona no Streamlit Cloud. Execute no seu servidor Ubuntu.")
 
         whatsapp_listas_selecionadas = st.multiselect("Selecione as Listas para Disparo:", nomes_listas_whatsapp, key="whatsapp_lists")
         whatsapp_uploaded_file = st.file_uploader("🖼️ Anexar Imagem (Opcional)", type=["png", "jpg", "jpeg"], key="whatsapp_img")
@@ -402,6 +318,7 @@ def app_ui():
             if not whatsapp_listas_selecionadas: st.error("Selecione pelo menos uma Lista."); return
             if not whatsapp_mensagem.strip(): st.error("Conteúdo vazio."); return
             
+            # 🛑 BLOQUEIO NO CLOUD: A função processar_disparo bloqueará com um erro limpo aqui.
             processar_disparo('WhatsApp', whatsapp_listas_selecionadas, whatsapp_mensagem, whatsapp_uploaded_file, listas_whatsapp_data)
 
 
