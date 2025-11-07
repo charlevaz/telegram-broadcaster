@@ -26,21 +26,21 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = "8586446411:AAH_jXK0Yv6h64gRLhoK3kv2kJo4mG5x3LE" 
 CREDENTIALS_FILE = '/home/charle/scripts/chaveBigQuery.json' 
 SHEET_ID = '1HSIwFfIr67i9K318DX1qTwzNtrJmaavLKUlDpW5C6xU' 
-WORKSHEET_NAME = 'lista_telegram' 
+WORKSHEET_NAME_TELEGRAM = 'lista_telegram' # Deve ter colunas: lista, nome, ids
+WORKSHEET_NAME_WHATSAPP = 'lista_whatsapp' # Deve ter colunas: lista, nome, numero
 
 USER_CREDENTIALS = {
     "charle": "equipe123",  
     "admin": "admin456"    
 }
 
-# 🟢 NOVO: Inicializa o estado de login com chave de sessão permanente
 if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = st.session_state.get('PERMANENT_LOGIN', False)
+    st.session_state['logged_in'] = False
 
 # ====================================================================
-# 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO (Mantidas)
-# ...
+# 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO
 # ====================================================================
+
 def get_gspread_client():
     """Retorna o cliente gspread autenticado."""
     
@@ -48,6 +48,7 @@ def get_gspread_client():
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         
         if 'google_service_account' in st.secrets:
+            # Autenticação via Streamlit Secrets (Cloud)
             creds_info = dict(st.secrets["google_service_account"]) 
             if isinstance(creds_info, dict):
                  creds_info['private_key'] = creds_info['private_key'].replace('\\n', '\n')
@@ -55,6 +56,7 @@ def get_gspread_client():
             else:
                  creds = Credentials.from_service_account_info(json.loads(creds_info), scopes=DEFAULT_SCOPES)
         else:
+            # Autenticação via arquivo local (Ubuntu Server)
             creds = Credentials.from_json_keyfile_name(CREDENTIALS_FILE, scopes=DEFAULT_SCOPES)
             
         return gspread.authorize(creds)
@@ -64,73 +66,174 @@ def get_gspread_client():
         st.error(f"ERRO DE AUTENTICAÇÃO CRÍTICA: {e}") 
         return None
 
-@st.cache_data(ttl=300, show_spinner="Buscando lista de destinatários...")
-def carregar_destinatarios_db():
+@st.cache_data(ttl=300, show_spinner="Buscando listas...")
+def carregar_listas_db(worksheet_name):
+    """Carrega listas da planilha, incluindo o nome para personalização."""
+    
+    # DESTINATARIOS será: {'Nome da Lista': [{'id': '123', 'nome': 'Fulano'}, {...}]}
     DESTINATARIOS = {} 
+    
     try:
         client = get_gspread_client()
         if client is None: return {"Erro de Conexão": "0"} 
-        sheet = client.open_by_key(SHEET_ID); worksheet = sheet.worksheet(WORKSHEET_NAME)
-        data = worksheet.get_all_records(); df = pd.DataFrame(data)
-        if 'lista' in df.columns and 'ids' in df.columns:
+
+        sheet = client.open_by_key(SHEET_ID)
+        worksheet = sheet.worksheet(worksheet_name)
+        
+        data = worksheet.get_all_records()
+        df = pd.DataFrame(data)
+        
+        # Colunas esperadas: lista, nome, e a coluna de ID específica
+        id_col = 'ids' if worksheet_name == WORKSHEET_NAME_TELEGRAM else 'numero'
+
+        if 'lista' in df.columns and 'nome' in df.columns and id_col in df.columns:
+            
             for index, row in df.iterrows():
-                nome_lista = str(row['lista']).strip(); chat_id = str(row['ids']).strip()
-                if nome_lista and chat_id:
-                    if nome_lista not in DESTINATARIOS: DESTINATARIOS[nome_lista] = []
-                    DESTINATARIOS[nome_lista].append(chat_id)
+                nome_lista = str(row['lista']).strip()
+                destinatario_id = str(row[id_col]).strip()
+                nome_destinatario = str(row['nome']).strip() # ⬅️ Novo: Coluna 'nome'
+                
+                if nome_lista and destinatario_id:
+                    if nome_lista not in DESTINATARIOS:
+                        DESTINATARIOS[nome_lista] = []
+                    
+                    DESTINATARIOS[nome_lista].append({'id': destinatario_id, 'nome': nome_destinatario})
+            
             return DESTINATARIOS
-        else: return {"Erro de Colunas": "0"}
+        else:
+            st.error(f"ERRO DE COLUNAS na aba '{worksheet_name}'. Colunas obrigatórias: 'lista', 'nome', e '{id_col}'.")
+            return {"Erro de Colunas": "0"}
+
     except Exception as e:
-        st.error(f"ERRO NA LEITURA DA PLANILHA: {e}"); logger.critical(f"Falha ao carregar a lista de destinatários: {e}")
+        st.error(f"ERRO NA LEITURA DA PLANILHA '{worksheet_name}': {e}") 
+        logger.critical(f"Falha ao carregar a lista de destinatários ({worksheet_name}): {e}")
         return {"Erro de Conexão": "0"}
 
-def enviar_mensagem(chat_id, texto):
+
+def substituir_variaveis(mensagem_original, nome_destinatario):
+    """Substitui as variáveis {nome} ou @nome na mensagem."""
+    # Garante que o nome tenha um valor padrão se estiver vazio
+    nome = nome_destinatario if nome_destinatario else "Cliente"
+    
+    # Substituição {nome} e @nome
+    mensagem_processada = mensagem_original.replace("{nome}", nome)
+    mensagem_processada = mensagem_processada.replace("@nome", nome)
+    
+    return mensagem_processada
+
+
+# --- Funções de Envio de API ---
+
+def enviar_mensagem_telegram_api(chat_id, mensagem_processada):
+    """Envia mensagem de texto via API Telegram."""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = { 'chat_id': chat_id, 'text': texto, 'parse_mode': 'Markdown' }
+    payload = { 'chat_id': chat_id, 'text': mensagem_processada, 'parse_mode': 'Markdown' }
+    
     try:
         response = requests.post(url, data=payload); response.raise_for_status()
         return True, response.json()
     except requests.exceptions.RequestException as e: return False, str(e)
 
-def enviar_foto(chat_id, foto_bytes, legenda=None):
+def enviar_foto_telegram_api(chat_id, foto_bytes, legenda_processada):
+    """Envia uma foto com legenda via API Telegram."""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     files = {'photo': ('imagem.jpg', foto_bytes, 'image/jpeg')} 
     data = {'chat_id': chat_id}
-    if legenda: data['caption'] = legenda; data['parse_mode'] = 'Markdown'
+    
+    if legenda_processada: data['caption'] = legenda_processada; data['parse_mode'] = 'Markdown'
+    
     try:
         response = requests.post(url, files=files, data=data); response.raise_for_status()
         return True, response.json()
     except requests.exceptions.RequestException as e: return False, str(e)
 
-def processar_disparo(ids_para_disparo, mensagem, uploaded_file):
+
+# ⚠️ Funções de Envio WhatsApp (Aviso/Placeholder)
+def enviar_mensagem_whatsapp_api(numero_destinatario, mensagem_processada, tem_imagem):
+    """Simulação de envio WhatsApp, com dicas anti-bloqueio."""
+    
+    # 🟢 DICAS ANTI-BLOQUEIO (Para o Log)
+    if not mensagem_processada.strip().lower().startswith(('olá', 'oi', 'prezado')):
+        logger.warning("Mensagem não iniciada com saudação. Alto risco de spam.")
+    
+    # 🛑 ESTE É UM PLACEHOLDER. O CÓDIGO REAL DEVE USAR SELENIUM/ULTRAMSG AQUI.
+    # Se você for usar Selenium, adicione delays longos (5-10s) entre cada mensagem.
+    
+    if tem_imagem:
+        return False, "Placeholder: Envio de imagem WhatsApp não implementado."
+    
+    if numero_destinatario == "999999999": # Número de teste fictício
+        return True, "Simulado com sucesso."
+    
+    return False, "Placeholder: API de WhatsApp não conectada."
+
+
+# --- Funções de Disparo (Central) ---
+
+def processar_disparo(canal, listas_selecionadas, mensagem_original, uploaded_file, listas_dados):
+    """Função central que executa o envio para um CANAL específico."""
+    
     file_bytes = None
     if uploaded_file is not None:
         if hasattr(uploaded_file, 'seek'): uploaded_file.seek(0)
         file_bytes = uploaded_file.read() 
-    total_enviados = 0; erros = []
-    with st.spinner(f'Iniciando envio para {len(ids_para_disparo)} destinatários...'):
+    
+    destinatarios_raw = []
+    # Compila a lista de todos os destinatários (IDs + Nomes)
+    for nome_lista in listas_selecionadas:
+        destinatarios_raw.extend(listas_dados.get(nome_lista, []))
+
+    # Remove duplicatas (baseado no ID)
+    destinatarios = pd.DataFrame(destinatarios_raw).drop_duplicates(subset=['id']).to_dict('records')
+    
+    total_enviados = 0
+    erros = []
+
+    with st.spinner(f'Iniciando envio {canal} para {len(destinatarios)} destinatários...'):
+        
         progress_bar = st.progress(0, text="Preparando envio...")
-        for i, chat_id_unico in enumerate(ids_para_disparo):
-            if file_bytes is not None: sucesso, resultado = enviar_foto(chat_id_unico, file_bytes, mensagem)
-            else: sucesso, resultado = enviar_mensagem(chat_id_unico, mensagem)
-            if sucesso: total_enviados += 1; logger.info(f"SUCESSO: Mensagem enviada para o ID: {chat_id_unico}")
-            else: erros.append(f"ID {chat_id_unico}: Falha -> {resultado}"); logger.error(f"FALHA: Erro ao enviar para o ID {chat_id_unico}. Detalhes: {resultado}")
-            percentual = (i + 1) / len(ids_para_disparo); progress_bar.progress(percentual, text=f"Enviando... {i + 1} de {len(ids_unicos)}")
+        
+        for i, dest in enumerate(destinatarios):
+            chat_id = dest['id']
+            nome_destinatario = dest['nome']
+            
+            # 1. PERSONALIZAÇÃO: Substitui a variável {nome} ou @nome
+            mensagem_processada = substituir_variaveis(mensagem_original, nome_destinatario)
+            
+            if canal == 'Telegram':
+                if file_bytes is not None:
+                    sucesso, resultado = enviar_foto_telegram_api(chat_id, file_bytes, mensagem_processada)
+                else:
+                    sucesso, resultado = enviar_mensagem_telegram_api(chat_id, mensagem_processada)
+            
+            elif canal == 'WhatsApp':
+                # ⚠️ API NÃO OFICIAL: AQUI ENTRARIA O CÓDIGO DE ENVIO DO WHATSAPP
+                sucesso, resultado = enviar_mensagem_whatsapp_api(chat_id, mensagem_processada, file_bytes is not None)
+            
+            if sucesso: total_enviados += 1
+            else: erros.append(f"ID {chat_id} ({nome_destinatario}): Falha -> {resultado}"); 
+            
+            logger.info(f"FIM: {canal} para {chat_id}. Status: {'SUCESSO' if sucesso else 'FALHA'}")
+
+            percentual = (i + 1) / len(destinatarios)
+            progress_bar.progress(percentual, text=f"Enviando... {i + 1} de {len(destinatarios)}")
+
     progress_bar.empty()
-    st.success(f"✅ Disparo concluído! **{total_enviados}** mensagens enviadas com sucesso.")
-    logger.info(f"FIM DO DISPARO: Enviados: {total_enviados}, Falhas: {len(erros)}")
+    st.success(f"✅ Disparo {canal} concluído! **{total_enviados}** mensagens enviadas com sucesso.")
+    logger.info(f"FIM DO DISPARO {canal}: Enviados: {total_enviados}, Falhas: {len(erros)}")
+    
     if erros:
-        st.warning(f"⚠️ Atenção! Ocorreram {len(erros)} falhas de envio. Verifique o arquivo '{LOG_FILE}' para detalhes.")
-        for erro in erros: st.code(erro.split(': Falha -> ')[0])
+        st.warning(f"⚠️ {len(erros)} falhas de envio. Detalhes no Log.")
+        # Exibe os 3 primeiros erros no frontend
+        for erro in erros[:3]: st.code(erro)
+            
     return total_enviados
 
-# ====================================================================
-# 🔒 FUNÇÕES DE LOGIN/LOGOUT (Modificado para Persistência)
-# ====================================================================
+
+# --- Funções de Login e Inicialização (Mantidas) ---
 
 def login_form():
     """Exibe o formulário de login e processa a autenticação."""
-    
     # 🔴 NOVO CSS: APLICA ESTILO TAMBÉM NA TELA DE LOGIN
     hide_streamlit_style_login = """
     <style>
@@ -149,26 +252,20 @@ def login_form():
     st.markdown("---")
 
     with st.form("login_form"):
-        username = st.text_input("Usuário:")
-        password = st.text_input("Senha:", type="password")
+        username = st.text_input("Usuário:"); password = st.text_input("Senha:", type="password")
         submitted = st.form_submit_button("Entrar", type="primary")
-
         if submitted:
             if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password: 
-                st.session_state['logged_in'] = True
-                st.session_state['username'] = username
-                # 🟢 NOVO: Variável de sessão persistente para evitar logout no refresh
-                st.session_state['PERMANENT_LOGIN'] = True 
+                st.session_state['logged_in'] = True; st.session_state['username'] = username
+                st.session_state['PERMANENT_LOGIN'] = True # Mantém a sessão
                 st.rerun()
             else: st.error("Usuário ou senha inválidos.")
 
 def logout_button():
     """Botão de Logout simples."""
     if st.sidebar.button("Sair", type="secondary"):
-        st.session_state['logged_in'] = False
-        st.session_state['PERMANENT_LOGIN'] = False # Limpa a sessão
-        st.session_state.pop('username', None)
-        st.rerun()
+        st.session_state['logged_in'] = False; st.session_state['PERMANENT_LOGIN'] = False
+        st.session_state.pop('username', None); st.rerun()
 
 # ====================================================================
 # 🖼️ 5. INTERFACE GRÁFICA PRINCIPAL (APP_UI)
@@ -176,65 +273,92 @@ def logout_button():
 
 def app_ui():
     
-    # 🪄 NOVO CSS: Oculta todos os elementos visuais indesejados
+    # 🪄 CSS GERAL: Oculta todos os elementos visuais indesejados
     hide_streamlit_style_app = """
     <style>
-    /* Oculta o menu de três pontos e o rodapé */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    /* Remove a barra de ferramentas superior (GitHub/Share/Fork) */
     [data-testid="stToolbar"] {visibility: hidden !important;} 
-    /* Remove a miniatura/coroa do Streamlit Cloud (Decoração) */
     [data-testid="stDecoration"] {visibility: hidden;} 
     </style>
     """
     st.markdown(hide_streamlit_style_app, unsafe_allow_html=True)
     
-    st.set_page_config(page_title="Broadcaster Telegram | Equipe", layout="wide") 
-    st.title("📢 Sistema de Disparo Telegram")
+    st.set_page_config(page_title="Broadcaster Multi-Canal | Equipe", layout="wide") 
+    st.title("📢 Sistema de Disparo Multi-Canal")
     st.sidebar.markdown(f"Usuário: **{st.session_state['username']}**")
     logout_button()
     st.sidebar.header("Configuração de Destinatários")
 
-    recarregar_lista = st.sidebar.button("🔄 Recarregar Lista da Planilha", type="secondary")
+    recarregar_lista = st.sidebar.button("🔄 Recarregar Dados da Planilha", type="secondary")
     if recarregar_lista:
         st.cache_data.clear()
 
-    # 1. CARREGA A LISTA DE DESTINATÁRIOS
-    lista_destinatarios = carregar_destinatarios_db()
+    # 1. CARREGA AS LISTAS DE AMBOS OS CANAIS
+    listas_telegram_data = carregar_listas_db(WORKSHEET_NAME_TELEGRAM)
+    listas_whatsapp_data = carregar_listas_db(WORKSHEET_NAME_WHATSAPP)
     
     # 2. TRATAMENTO DE ERRO NA CONEXÃO
-    if "Erro de Conexão" in lista_destinatarios or "Erro de Colunas" in lista_destinatarios:
+    if "Erro de Conexão" in listas_telegram_data or "Erro de Colunas" in listas_telegram_data:
+        st.error("Falha ao carregar a lista do Telegram. Verifique as credenciais e colunas.")
         return 
     
-    nomes_listas = list(lista_destinatarios.keys())
+    if "Erro de Conexão" in listas_whatsapp_data or "Erro de Colunas" in listas_whatsapp_data:
+        st.warning("⚠️ Falha ao carregar a lista do WhatsApp. A funcionalidade WhatsApp será limitada.")
     
-    # --- Disparo Imediato (Corpo Principal) ---
     
-    st.header("Disparo Imediato"); st.markdown("---")
-    
-    imediato_listas_selecionadas = st.multiselect("Selecione as Listas para Disparo:", nomes_listas, key="imediato_lists")
-    imediato_uploaded_file = st.file_uploader("🖼️ Anexar Imagem (Opcional)", type=["png", "jpg", "jpeg"], key="imediato_img")
-    imediato_mensagem = st.text_area("📝 Mensagem para Disparo", height=150, key="imediato_msg")
-    
-    imediato_ids_para_disparo = set()
-    for nome_lista in imediato_listas_selecionadas: imediato_ids_para_disparo.update(lista_destinatarios.get(nome_lista, []))
+    # --- SEPARAÇÃO POR ABAS (Telegram e WhatsApp) ---
+    # Usamos HTML/Markdown para os logos mais profissionais
+    tab_telegram, tab_whatsapp = st.tabs(["🟦 Telegram", "🟢 WhatsApp"])
+
+    # --- ABA 1: TELEGRAM ---
+    with tab_telegram:
+        st.markdown('### <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Telegram_logo.svg/24px-Telegram_logo.svg.png" style="width:24px; vertical-align:middle;"> Disparo Telegram', unsafe_allow_html=True)
+
+        nomes_listas_telegram = list(listas_telegram_data.keys())
         
-    st.info(f"Serão alcançados **{len(imediato_ids_para_disparo)}** CHAT IDs únicos.")
-
-    if st.button("🚀 Disparar Mensagem Agora", type="primary"):
-        if not imediato_listas_selecionadas: st.error("Selecione pelo menos uma Lista para Disparo."); return
-        if not imediato_mensagem.strip() and imediato_uploaded_file is None: st.error("Conteúdo vazio."); return
-
-        logger.info(f"INÍCIO DO DISPARO IMEDIATO: Alvo: {imediato_listas_selecionadas}")
-        processar_disparo(imediato_ids_para_disparo, imediato_mensagem, imediato_uploaded_file)
+        imediato_listas_selecionadas = st.multiselect("Selecione as Listas para Disparo:", nomes_listas_telegram, key="telegram_lists")
+        imediato_uploaded_file = st.file_uploader("🖼️ Anexar Imagem (Opcional)", type=["png", "jpg", "jpeg"], key="telegram_img")
+        imediato_mensagem = st.text_area("📝 Mensagem para Disparo (Use {nome} ou @nome para personalizar)", height=150, key="telegram_msg")
         
-# ====================================================================
-# 🚀 FUNÇÃO DE INICIALIZAÇÃO
-# ====================================================================
+        imediato_ids_para_disparo = set()
+        for nome_lista in imediato_listas_selecionadas: imediato_ids_para_disparo.update(listas_telegram_data.get(nome_lista, []))
+            
+        st.info(f"Telegram: Serão alcançados **{len(imediato_ids_para_disparo)}** CHAT IDs únicos.")
 
+        if st.button("🚀 Disparar Telegram Agora", key="btn_telegram", type="primary"):
+            if not imediato_listas_selecionadas: st.error("Selecione pelo menos uma Lista."); return
+            if not imediato_mensagem.strip() and imediato_uploaded_file is None: st.error("Conteúdo vazio."); return
+
+            processar_disparo_telegram(imediato_ids_para_disparo, imediato_mensagem, imediato_uploaded_file, listas_telegram_data)
+            
+            
+    # --- ABA 2: WHATSAPP ---
+    with tab_whatsapp:
+        st.markdown('### <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/24px-WhatsApp.svg.png" style="width:24px; vertical-align:middle;"> Disparo WhatsApp (Não Oficial)', unsafe_allow_html=True)
+        st.warning("⚠️ RISCO DE BLOQUEIO: Este método não usa a API oficial. Use o envio moderado, ofereça opt-out e personalize as mensagens.")
+
+        nomes_listas_whatsapp = list(listas_whatsapp_data.keys())
+        
+        whatsapp_listas_selecionadas = st.multiselect("Selecione as Listas para Disparo:", nomes_listas_whatsapp, key="whatsapp_lists")
+        whatsapp_uploaded_file = st.file_uploader("🖼️ Anexar Imagem (Opcional)", type=["png", "jpg", "jpeg"], key="whatsapp_img")
+        whatsapp_mensagem = st.text_area("Mensagem para Disparo (Use {nome} ou @nome para personalizar)", height=150, key="whatsapp_msg")
+
+        whatsapp_ids_para_disparo = set()
+        for nome_lista in whatsapp_listas_selecionadas: whatsapp_ids_para_disparo.update(listas_whatsapp_data.get(nome_lista, []))
+
+        st.info(f"WhatsApp: Serão alcançados **{len(whatsapp_ids_para_disparo)}** NÚMEROS únicos.")
+
+        if st.button("🚀 Disparar WhatsApp Agora", key="btn_whatsapp", type="primary"):
+            if not whatsapp_listas_selecionadas: st.error("Selecione pelo menos uma Lista."); return
+            if not whatsapp_mensagem.strip(): st.error("Conteúdo vazio."); return
+            
+            # ⚠️ CHAMA A FUNÇÃO DE ENVIO DO WHATSAPP
+            processar_disparo_whatsapp(whatsapp_ids_para_disparo, whatsapp_mensagem, whatsapp_uploaded_file, listas_whatsapp_data)
+
+
+# --- Funções Main e Inicialização ---
 def main():
-    """Controla se exibe a tela de login ou a aplicação principal."""
     if st.session_state['logged_in']:
         app_ui()
     else:
