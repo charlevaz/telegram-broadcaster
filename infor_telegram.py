@@ -6,6 +6,7 @@ import pandas as pd
 import logging
 import json 
 from gspread.auth import DEFAULT_SCOPES 
+import hashlib 
 
 # ====================================================================
 # 🚨 1. CONFIGURAÇÃO E LOGGING
@@ -26,8 +27,8 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = "8586446411:AAH_jXK0Yv6h64gRLhoK3kv2kJo4mG5x3LE" 
 CREDENTIALS_FILE = '/home/charle/scripts/chaveBigQuery.json' 
 SHEET_ID = '1HSIwFfIr67i9K318DX1qTwzNtrJmaavLKUlDpW5C6xU' 
-WORKSHEET_NAME_TELEGRAM = 'lista_telegram' # Deve ter colunas: lista, nome, ids
-WORKSHEET_NAME_WHATSAPP = 'lista_whatsapp' # Deve ter colunas: lista, nome, numero
+WORKSHEET_NAME_TELEGRAM = 'lista_telegram' 
+WORKSHEET_NAME_WHATSAPP = 'lista_whatsapp'
 
 USER_CREDENTIALS = {
     "charle": "equipe123",  
@@ -36,6 +37,8 @@ USER_CREDENTIALS = {
 
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
+if 'PERMANENT_LOGIN' not in st.session_state:
+    st.session_state['logged_in'] = st.session_state.get('PERMANENT_LOGIN', False)
 
 # ====================================================================
 # 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO
@@ -48,7 +51,7 @@ def get_gspread_client():
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         
         if 'google_service_account' in st.secrets:
-            # Autenticação via Streamlit Secrets (Cloud)
+            # 🟢 Autenticação via Streamlit Secrets (Cloud)
             creds_info = dict(st.secrets["google_service_account"]) 
             if isinstance(creds_info, dict):
                  creds_info['private_key'] = creds_info['private_key'].replace('\\n', '\n')
@@ -56,7 +59,7 @@ def get_gspread_client():
             else:
                  creds = Credentials.from_service_account_info(json.loads(creds_info), scopes=DEFAULT_SCOPES)
         else:
-            # Autenticação via arquivo local (Ubuntu Server)
+            # 🟡 Autenticação via arquivo local (Ubuntu Server)
             creds = Credentials.from_json_keyfile_name(CREDENTIALS_FILE, scopes=DEFAULT_SCOPES)
             
         return gspread.authorize(creds)
@@ -70,7 +73,6 @@ def get_gspread_client():
 def carregar_listas_db(worksheet_name):
     """Carrega listas da planilha, incluindo o nome para personalização."""
     
-    # DESTINATARIOS será: {'Nome da Lista': [{'id': '123', 'nome': 'Fulano'}, {...}]}
     DESTINATARIOS = {} 
     
     try:
@@ -83,7 +85,7 @@ def carregar_listas_db(worksheet_name):
         data = worksheet.get_all_records()
         df = pd.DataFrame(data)
         
-        # Colunas esperadas: lista, nome, e a coluna de ID específica
+        # Colunas esperadas
         id_col = 'ids' if worksheet_name == WORKSHEET_NAME_TELEGRAM else 'numero'
 
         if 'lista' in df.columns and 'nome' in df.columns and id_col in df.columns:
@@ -91,7 +93,7 @@ def carregar_listas_db(worksheet_name):
             for index, row in df.iterrows():
                 nome_lista = str(row['lista']).strip()
                 destinatario_id = str(row[id_col]).strip()
-                nome_destinatario = str(row['nome']).strip() # ⬅️ Novo: Coluna 'nome'
+                nome_destinatario = str(row['nome']).strip()
                 
                 if nome_lista and destinatario_id:
                     if nome_lista not in DESTINATARIOS:
@@ -101,18 +103,17 @@ def carregar_listas_db(worksheet_name):
             
             return DESTINATARIOS
         else:
-            st.error(f"ERRO DE COLUNAS na aba '{worksheet_name}'. Colunas obrigatórias: 'lista', 'nome', e '{id_col}'.")
-            return {"Erro de Colunas": "0"}
+            # Se as colunas estiverem erradas, retorna um dicionário VAZIO, mas com aviso.
+            st.error(f"ERRO DE COLUNAS na aba '{worksheet_name}'. Obrigatórias: 'lista', 'nome', e '{id_col}'.")
+            return {} # ⬅️ Retorna VAZIO para não travar a interface.
 
     except Exception as e:
         st.error(f"ERRO NA LEITURA DA PLANILHA '{worksheet_name}': {e}") 
         logger.critical(f"Falha ao carregar a lista de destinatários ({worksheet_name}): {e}")
         return {"Erro de Conexão": "0"}
 
-
 def substituir_variaveis(mensagem_original, nome_destinatario):
     """Substitui as variáveis {nome} ou @nome na mensagem."""
-    # Garante que o nome tenha um valor padrão se estiver vazio
     nome = nome_destinatario if nome_destinatario else "Cliente"
     
     # Substituição {nome} e @nome
@@ -120,7 +121,6 @@ def substituir_variaveis(mensagem_original, nome_destinatario):
     mensagem_processada = mensagem_processada.replace("@nome", nome)
     
     return mensagem_processada
-
 
 # --- Funções de Envio de API ---
 
@@ -148,24 +148,24 @@ def enviar_foto_telegram_api(chat_id, foto_bytes, legenda_processada):
     except requests.exceptions.RequestException as e: return False, str(e)
 
 
-# ⚠️ Funções de Envio WhatsApp (Aviso/Placeholder)
 def enviar_mensagem_whatsapp_api(numero_destinatario, mensagem_processada, tem_imagem):
-    """Simulação de envio WhatsApp, com dicas anti-bloqueio."""
+    """Simulação de envio WhatsApp (Placeholder)."""
     
-    # 🟢 DICAS ANTI-BLOQUEIO (Para o Log)
-    if not mensagem_processada.strip().lower().startswith(('olá', 'oi', 'prezado')):
-        logger.warning("Mensagem não iniciada com saudação. Alto risco de spam.")
+    # 🛑 ESTE É UM PLACEHOLDER. IMPLEMENTE AQUI SUA LÓGICA DE ENVIO NÃO OFICIAL.
+    # Exemplo (NÃO USAR EM PRODUÇÃO):
+    # from selenium import webdriver
+    # driver = webdriver.Chrome()
+    # driver.get(f'https://web.whatsapp.com/send?phone={numero_destinatario}&text={mensagem_processada}')
     
-    # 🛑 ESTE É UM PLACEHOLDER. O CÓDIGO REAL DEVE USAR SELENIUM/ULTRAMSG AQUI.
-    # Se você for usar Selenium, adicione delays longos (5-10s) entre cada mensagem.
-    
+    logger.warning("Simulação: Tentativa de envio WhatsApp. Ação bloqueada.")
     if tem_imagem:
         return False, "Placeholder: Envio de imagem WhatsApp não implementado."
     
-    if numero_destinatario == "999999999": # Número de teste fictício
+    # Se o número de destino for '5511988887777', simula sucesso
+    if numero_destinatario.endswith('999999999'):
         return True, "Simulado com sucesso."
     
-    return False, "Placeholder: API de WhatsApp não conectada."
+    return False, "Placeholder: API de WhatsApp não conectada/implementada."
 
 
 # --- Funções de Disparo (Central) ---
@@ -207,7 +207,7 @@ def processar_disparo(canal, listas_selecionadas, mensagem_original, uploaded_fi
                     sucesso, resultado = enviar_mensagem_telegram_api(chat_id, mensagem_processada)
             
             elif canal == 'WhatsApp':
-                # ⚠️ API NÃO OFICIAL: AQUI ENTRARIA O CÓDIGO DE ENVIO DO WHATSAPP
+                # ⚠️ API NÃO OFICIAL: CHAMA O PLACEHOLDER
                 sucesso, resultado = enviar_mensagem_whatsapp_api(chat_id, mensagem_processada, file_bytes is not None)
             
             if sucesso: total_enviados += 1
@@ -224,16 +224,15 @@ def processar_disparo(canal, listas_selecionadas, mensagem_original, uploaded_fi
     
     if erros:
         st.warning(f"⚠️ {len(erros)} falhas de envio. Detalhes no Log.")
-        # Exibe os 3 primeiros erros no frontend
         for erro in erros[:3]: st.code(erro)
             
     return total_enviados
 
 
-# --- Funções de Login e Inicialização (Mantidas) ---
-
+# --- Funções de Login e Inicialização ---
 def login_form():
     """Exibe o formulário de login e processa a autenticação."""
+    
     # 🔴 NOVO CSS: APLICA ESTILO TAMBÉM NA TELA DE LOGIN
     hide_streamlit_style_login = """
     <style>
@@ -299,16 +298,15 @@ def app_ui():
     listas_whatsapp_data = carregar_listas_db(WORKSHEET_NAME_WHATSAPP)
     
     # 2. TRATAMENTO DE ERRO NA CONEXÃO
-    if "Erro de Conexão" in listas_telegram_data or "Erro de Colunas" in listas_telegram_data:
-        st.error("Falha ao carregar a lista do Telegram. Verifique as credenciais e colunas.")
+    if "Erro de Conexão" in listas_telegram_data:
+        st.error("Falha ao carregar a lista do Telegram. Verifique as credenciais.")
         return 
     
-    if "Erro de Conexão" in listas_whatsapp_data or "Erro de Colunas" in listas_whatsapp_data:
-        st.warning("⚠️ Falha ao carregar a lista do WhatsApp. A funcionalidade WhatsApp será limitada.")
+    if "Erro de Conexão" in listas_whatsapp_data:
+        st.warning("⚠️ Falha na conexão para WhatsApp. A funcionalidade WhatsApp será limitada.")
     
     
     # --- SEPARAÇÃO POR ABAS (Telegram e WhatsApp) ---
-    # Usamos HTML/Markdown para os logos mais profissionais
     tab_telegram, tab_whatsapp = st.tabs(["🟦 Telegram", "🟢 WhatsApp"])
 
     # --- ABA 1: TELEGRAM ---
@@ -330,13 +328,13 @@ def app_ui():
             if not imediato_listas_selecionadas: st.error("Selecione pelo menos uma Lista."); return
             if not imediato_mensagem.strip() and imediato_uploaded_file is None: st.error("Conteúdo vazio."); return
 
-            processar_disparo_telegram(imediato_ids_para_disparo, imediato_mensagem, imediato_uploaded_file, listas_telegram_data)
+            processar_disparo('Telegram', imediato_listas_selecionadas, imediato_mensagem, imediato_uploaded_file, listas_telegram_data)
             
             
     # --- ABA 2: WHATSAPP ---
     with tab_whatsapp:
-        st.markdown('### <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/24px-WhatsApp.svg.png" style="width:24px; vertical-align:middle;"> Disparo WhatsApp (Não Oficial)', unsafe_allow_html=True)
-        st.warning("⚠️ RISCO DE BLOQUEIO: Este método não usa a API oficial. Use o envio moderado, ofereça opt-out e personalize as mensagens.")
+        st.markdown('### <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/24px-WhatsApp_logo.svg.png" style="width:24px; vertical-align:middle;"> Disparo WhatsApp (Não Oficial)', unsafe_allow_html=True)
+        st.warning("⚠️ RISCO DE BLOQUEIO: Este método não usa a API oficial. O envio deve ser moderado, e o número precisa estar logado no WhatsApp Web.")
 
         nomes_listas_whatsapp = list(listas_whatsapp_data.keys())
         
@@ -353,8 +351,8 @@ def app_ui():
             if not whatsapp_listas_selecionadas: st.error("Selecione pelo menos uma Lista."); return
             if not whatsapp_mensagem.strip(): st.error("Conteúdo vazio."); return
             
-            # ⚠️ CHAMA A FUNÇÃO DE ENVIO DO WHATSAPP
-            processar_disparo_whatsapp(whatsapp_ids_para_disparo, whatsapp_mensagem, whatsapp_uploaded_file, listas_whatsapp_data)
+            # ⚠️ CHAMA A FUNÇÃO DE ENVIO DO WHATSAPP (PLACEHOLDER)
+            processar_disparo('WhatsApp', whatsapp_listas_selecionadas, whatsapp_mensagem, whatsapp_uploaded_file, listas_whatsapp_data)
 
 
 # --- Funções Main e Inicialização ---
