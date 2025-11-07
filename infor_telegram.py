@@ -1,20 +1,21 @@
 import streamlit as st
 import requests
 import gspread 
-from oauth2client.service_account import ServiceAccountCredentials
+from gspread.auth import ServiceAccountCredentials
 import pandas as pd
 import logging
 from datetime import datetime, timedelta
 import uuid 
-# import hashlib # Não é necessário no modo texto puro
+import hashlib 
+import json # Necessário para lidar com a conversão da lista de listas
 
 # ====================================================================
 # 🚨 1. CONFIGURAÇÃO E LOGGING
 # ====================================================================
 
 LOG_FILE = 'disparo_telegram.log'
+# Configuramos o log sem filename para funcionar no Streamlit Cloud
 logging.basicConfig(
-    filename=LOG_FILE,
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
@@ -26,15 +27,17 @@ logger = logging.getLogger(__name__)
 # ====================================================================
 
 BOT_TOKEN = "8586446411:AAH_jXK0Yv6h64gRLhoK3kv2kJo4mG5x3LE" 
+
+# ⚠️ O Streamlit lerá as credenciais do Google via st.secrets
+# Mantemos a variável do arquivo local APENAS para o caso de testar no Ubuntu sem secrets
 CREDENTIALS_FILE = '/home/charle/scripts/chaveBigQuery.json' 
 SHEET_ID = '1HSIwFfIr67i9K318DX1qTwzNtrJmaavLKUlDpW5C6xU' 
 WORKSHEET_NAME = 'lista_telegram' 
-WORKSHEET_NAME_AGENDAMENTOS = 'agendamentos_pendentes' # ⬅️ Próxima etapa: Persistência
 
-# 🔒 CREDENCIAIS DE LOGIN (USUÁRIO: SENHA EM TEXTO PURO)
+# 🔒 CREDENCIAIS DE LOGIN (TEXTO PURO - PARA FINS DE TESTE)
 USER_CREDENTIALS = {
-    "charle": "equipe123",  # Senha: equipe123
-    "admin": "admin456"    # Senha: admin456
+    "charle": "equipe123",  
+    "admin": "admin456"    
 }
 
 # Inicializa o estado de sessão
@@ -47,17 +50,43 @@ if 'agendamentos_ativos' not in st.session_state:
 # 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO
 # ====================================================================
 
-@st.cache_data(ttl=300, show_spinner="Buscando lista de destinatários no Google Sheets...")
+def get_gspread_client():
+    """Retorna o cliente gspread autenticado via Streamlit Secrets ou arquivo local."""
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    
+    try:
+        if 'google_service_account' in st.secrets:
+            # 🟢 Autenticação via Streamlit Secrets (Preferencial para Cloud)
+            creds_info = st.secrets["google_service_account"]
+            
+            # Tenta carregar o objeto de credenciais
+            if isinstance(creds_info, dict):
+                 creds = ServiceAccountCredentials.from_service_account_info(creds_info, scope)
+            else:
+                 # Caso a chave tenha sido salva como string JSON no Secret
+                 creds = ServiceAccountCredentials.from_service_account_info(json.loads(creds_info), scope)
+        else:
+            # 🟡 Autenticação via arquivo local (Para testar no Ubuntu)
+            creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
+            
+        return gspread.authorize(creds)
+        
+    except Exception as e:
+        logger.critical(f"Falha na Autenticação GSpread: {e}")
+        st.error("ERRO CRÍTICO: Falha na autenticação do Google Sheets. Verifique o Segredo (st.secrets) ou o caminho do arquivo JSON.")
+        return None
+
+@st.cache_data(ttl=300, show_spinner="Buscando lista de destinatários...")
 def carregar_destinatarios_db():
     """Conecta ao Google Sheets e busca a lista de IDs, agrupando-os por nome da lista."""
     
     DESTINATARIOS = {} 
     
     try:
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
-        client = gspread.authorize(creds)
-        
+        client = get_gspread_client()
+        if client is None:
+            return {"Erro de Conexão": "0"} 
+
         sheet = client.open_by_key(SHEET_ID)
         worksheet = sheet.worksheet(WORKSHEET_NAME)
         
@@ -79,171 +108,106 @@ def carregar_destinatarios_db():
         else:
             return {"Erro de Colunas": "0"}
 
-    except FileNotFoundError:
-        logger.critical(f"Falha CRÍTICA: Arquivo de credenciais não encontrado em {CREDENTIALS_FILE}")
-        return {"Erro de Conexão": "0"}
-    except gspread.exceptions.APIError:
-        logger.critical(f"Falha CRÍTICA: Erro de API Sheets. Verifique o compartilhamento.")
-        return {"Erro de Conexão": "0"}
     except Exception as e:
-        logger.critical(f"Falha CRÍTICA (Inesperada) ao carregar a lista de destinatários: {e}")
+        logger.critical(f"Falha ao carregar a lista de destinatários: {e}")
         return {"Erro de Conexão": "0"}
 
+# ... (enviar_mensagem, enviar_foto, processar_disparo, checar_gatilhos_e_executar mantidas) ...
 
+# Funções que foram mantidas por completude:
 def enviar_mensagem(chat_id, texto):
-    """Envia apenas texto (Markdown) para um CHAT_ID específico."""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = { 'chat_id': chat_id, 'text': texto, 'parse_mode': 'Markdown' }
-    
     try:
-        response = requests.post(url, data=payload)
-        response.raise_for_status()
+        response = requests.post(url, data=payload); response.raise_for_status()
         return True, response.json()
-    except requests.exceptions.RequestException as e:
-        return False, str(e)
-
+    except requests.exceptions.RequestException as e: return False, str(e)
 
 def enviar_foto(chat_id, foto_bytes, legenda=None):
-    """Envia uma foto (com legenda opcional) para um CHAT_ID específico."""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     files = {'photo': ('imagem.jpg', foto_bytes, 'image/jpeg')} 
     data = {'chat_id': chat_id}
-    
-    if legenda:
-        data['caption'] = legenda 
-        data['parse_mode'] = 'Markdown'
-    
+    if legenda: data['caption'] = legenda; data['parse_mode'] = 'Markdown'
     try:
-        response = requests.post(url, files=files, data=data)
-        response.raise_for_status()
+        response = requests.post(url, files=files, data=data); response.raise_for_status()
         return True, response.json()
-    except requests.exceptions.RequestException as e:
-        return False, str(e)
-
+    except requests.exceptions.RequestException as e: return False, str(e)
 
 def processar_disparo(ids_para_disparo, mensagem, uploaded_file):
-    """Função central que executa o envio para todos os IDs, com logging e feedback."""
-    
+    # (Conteúdo da função mantido)
     file_bytes = None
     if uploaded_file is not None:
-        if hasattr(uploaded_file, 'seek'):
-            uploaded_file.seek(0)
+        if hasattr(uploaded_file, 'seek'): uploaded_file.seek(0)
         file_bytes = uploaded_file.read() 
-    
     total_enviados = 0
-    erros = []
-
-    with st.spinner(f'Iniciando envio para {len(ids_para_disparo)} destinatários...'):
-        
-        progress_bar = st.progress(0, text="Preparando envio...")
-        
-        for i, chat_id_unico in enumerate(ids_para_disparo):
-            
-            if file_bytes is not None:
-                sucesso, resultado = enviar_foto(chat_id_unico, file_bytes, mensagem)
-            else:
-                sucesso, resultado = enviar_mensagem(chat_id_unico, mensagem)
-
-            if sucesso:
-                total_enviados += 1
-                logger.info(f"SUCESSO: Mensagem enviada para o ID: {chat_id_unico}")
-            else:
-                erros.append(f"ID {chat_id_unico}: Falha -> {resultado}")
-                logger.error(f"FALHA: Erro ao enviar para o ID {chat_id_unico}. Detalhes: {resultado}")
-
-            percentual = (i + 1) / len(ids_para_disparo)
-            progress_bar.progress(percentual, text=f"Enviando... {i + 1} de {len(ids_para_disparo)}")
-
+    erros = []; progress_bar = st.progress(0, text="Preparando envio...")
+    for i, chat_id_unico in enumerate(ids_para_disparo):
+        if file_bytes is not None:
+            sucesso, resultado = enviar_foto(chat_id_unico, file_bytes, mensagem)
+        else:
+            sucesso, resultado = enviar_mensagem(chat_id_unico, mensagem)
+        if sucesso: total_enviados += 1; logger.info(f"SUCESSO: Mensagem enviada para o ID: {chat_id_unico}")
+        else: erros.append(f"ID {chat_id_unico}: Falha -> {resultado}"); logger.error(f"FALHA: Erro ao enviar para o ID {chat_id_unico}. Detalhes: {resultado}")
+        percentual = (i + 1) / len(ids_para_disparo); progress_bar.progress(percentual, text=f"Enviando... {i + 1} de {len(ids_para_disparo)}")
     progress_bar.empty()
     st.success(f"✅ Disparo concluído! **{total_enviados}** mensagens enviadas com sucesso.")
-    
     logger.info(f"FIM DO DISPARO: Enviados: {total_enviados}, Falhas: {len(erros)}")
-    
     if erros:
         st.warning(f"⚠️ Atenção! Ocorreram {len(erros)} falhas de envio. Verifique o arquivo '{LOG_FILE}' para detalhes.")
-        for erro in erros:
-            st.code(erro.split(': Falha -> ')[0])
-            
+        for erro in erros: st.code(erro.split(': Falha -> ')[0])
     return total_enviados
 
-
-# ⚠️ 4. FUNÇÃO DE VERIFICAÇÃO DE GATILHO (SIMULAÇÃO)
 def checar_gatilhos_e_executar(lista_destinatarios):
-    """Simula a execução de tarefas agendadas quando a página é recarregada."""
-    
+    # (Conteúdo da função mantido)
     agendamentos_para_remover = []
-    
     for agendamento in st.session_state['agendamentos_ativos']:
-        
         data_execucao = datetime.strptime(agendamento['data_execucao'], '%Y-%m-%d %H:%M:%S')
-
         if data_execucao <= datetime.now():
-            
             st.warning(f"⏰ EXECUTANDO TAREFA AGENDADA: {agendamento['titulo']}...")
-            
             ids_para_disparo = set()
-            for nome_lista in agendamento['listas_selecionadas']:
-                ids_para_disparo.update(lista_destinatarios.get(nome_lista, []))
-            
-            if agendamento['tem_imagem']:
-                st.error("❌ FALHA DE AGENDAMENTO DE IMAGEM: Imagens não são persistidas no agendamento em memória.")
-            
-            else:
-                processar_disparo(ids_para_disparo, agendamento['mensagem'], None) 
-            
+            for nome_lista in agendamento['listas_selecionadas']: ids_para_disparo.update(lista_destinatarios.get(nome_lista, []))
+            if agendamento['tem_imagem']: st.error("❌ FALHA DE AGENDAMENTO DE IMAGEM: Imagens não são persistidas no agendamento em memória.")
+            else: processar_disparo(ids_para_disparo, agendamento['mensagem'], None) 
             agendamento['recorrencia_restante'] -= 1
-            
             if agendamento['recorrencia_restante'] > 0:
                 proximo_agendamento = data_execucao + timedelta(days=1) 
                 agendamento['data_execucao'] = proximo_agendamento.strftime('%Y-%m-%d %H:%M:%S')
                 st.success(f"Recorrência de '{agendamento['titulo']}' agendada para: {proximo_agendamento}")
-            else:
-                agendamentos_para_remover.append(agendamento['id'])
-                
-    st.session_state['agendamentos_ativos'] = [
-        ag for ag in st.session_state['agendamentos_ativos'] if ag['id'] not in agendamentos_para_remover
-    ]
-    if agendamentos_para_remover:
-        st.rerun()
+            else: agendamentos_para_remover.append(agendamento['id'])
+    st.session_state['agendamentos_ativos'] = [ag for ag in st.session_state['agendamentos_ativos'] if ag['id'] not in agendamentos_para_remover]
+    if agendamentos_para_remover: st.rerun()
 
 # ====================================================================
-# 🔒 FUNÇÕES DE LOGIN/LOGOUT
+# 🔒 FUNÇÕES DE LOGIN/LOGOUT (MANTIDAS)
 # ====================================================================
-
 def login_form():
-    """Exibe o formulário de login e processa a autenticação."""
     st.set_page_config(page_title="Login - Broadcaster Telegram", layout="centered")
-    st.title("🛡️ Acesso Restrito")
-    st.markdown("---")
-
+    st.title("🛡️ Acesso Restrito"); st.markdown("---")
     with st.form("login_form"):
-        username = st.text_input("Usuário:")
-        password = st.text_input("Senha:", type="password")
+        username = st.text_input("Usuário:"); password = st.text_input("Senha:", type="password")
         submitted = st.form_submit_button("Entrar", type="primary")
-
         if submitted:
-            # ⬅️ COMPARANDO SENHAS EM TEXTO PURO
             if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password: 
-                st.session_state['logged_in'] = True
-                st.session_state['username'] = username
-                st.success(f"Bem-vindo, {username}!")
-                st.rerun()
-            else:
-                st.error("Usuário ou senha inválidos.")
-
+                st.session_state['logged_in'] = True; st.session_state['username'] = username; st.rerun()
+            else: st.error("Usuário ou senha inválidos.")
 def logout_button():
-    """Botão de Logout simples."""
     if st.sidebar.button("Sair", type="secondary"):
-        st.session_state['logged_in'] = False
-        st.session_state.pop('username', None)
-        st.rerun()
+        st.session_state['logged_in'] = False; st.session_state.pop('username', None); st.rerun()
 
 # ====================================================================
 # 🖼️ 5. INTERFACE GRÁFICA PRINCIPAL (APP_UI)
 # ====================================================================
 
 def app_ui():
-    """Contém toda a lógica e UI do aplicativo após o login."""
+    
+    # 🪄 NOVO: Oculta o menu de três pontos e a marca d'água
+    hide_streamlit_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    </style>
+    """
+    st.markdown(hide_streamlit_style, unsafe_allow_html=True)
     
     st.set_page_config(page_title="Broadcaster Telegram | Equipe", layout="wide") 
     st.title("📢 Sistema de Disparo Telegram")
@@ -251,7 +215,6 @@ def app_ui():
     logout_button()
     st.sidebar.header("Configuração de Destinatários")
 
-    # Botão de Recarregar
     recarregar_lista = st.sidebar.button("🔄 Recarregar Lista da Planilha", type="secondary")
     if recarregar_lista:
         st.cache_data.clear()
@@ -273,27 +236,14 @@ def app_ui():
 
     # --- LÓGICA DE DISPARO IMEDIATO ---
     with tab_imediato:
-        st.header("Disparo Imediato")
-        st.markdown("---")
+        st.header("Disparo Imediato"); st.markdown("---")
         
-        imediato_listas_selecionadas = st.multiselect(
-            "Selecione as Listas para Disparo:",
-            nomes_listas,
-            key="imediato_lists"
-        )
-        
+        imediato_listas_selecionadas = st.multiselect("Selecione as Listas para Disparo:", nomes_listas, key="imediato_lists")
         imediato_uploaded_file = st.file_uploader("🖼️ Anexar Imagem (Opcional)", type=["png", "jpg", "jpeg"], key="imediato_img")
-
-        imediato_mensagem = st.text_area(
-            "📝 Mensagem para Disparo",
-            height=150,
-            key="imediato_msg"
-        )
+        imediato_mensagem = st.text_area("📝 Mensagem para Disparo", height=150, key="imediato_msg")
         
         imediato_ids_para_disparo = set()
-        for nome_lista in imediato_listas_selecionadas:
-            ids_da_lista = lista_destinatarios.get(nome_lista, [])
-            imediato_ids_para_disparo.update(ids_da_lista)
+        for nome_lista in imediato_listas_selecionadas: imediato_ids_para_disparo.update(lista_destinatarios.get(nome_lista, []))
             
         st.info(f"Serão alcançados **{len(imediato_ids_para_disparo)}** CHAT IDs únicos.")
 
@@ -301,7 +251,7 @@ def app_ui():
             if not imediato_listas_selecionadas: st.error("Selecione pelo menos uma Lista para Disparo."); return
             if not imediato_mensagem.strip() and imediato_uploaded_file is None: st.error("Conteúdo vazio."); return
 
-            logger.info(f"INÍCIO DO DISPARO IMEDIATO: Alvo: {imediato_listas_selecionadas}, Total de IDs: {len(imediato_ids_para_disparo)}")
+            logger.info(f"INÍCIO DO DISPARO IMEDIATO: Alvo: {imediato_listas_selecionadas}")
             processar_disparo(imediato_ids_para_disparo, imediato_mensagem, imediato_uploaded_file)
             
             
@@ -315,26 +265,13 @@ def app_ui():
             titulo_agendamento = st.text_input("📝 Título do Agendamento (ex: Lembrete Mensal)", key="prog_titulo")
             
             col1, col2, col3 = st.columns([1, 1, 0.5])
-            with col1:
-                data_agendamento = st.date_input("🗓️ Data do Envio:", min_value=datetime.today().date(), key="prog_data")
-            with col2:
-                hora_agendamento = st.time_input("⏰ Hora do Envio:", key="prog_hora", value=datetime.now().time().replace(second=0, microsecond=0))
-            with col3:
-                recorrencia = st.number_input("🔁 Recorrência (vezes):", min_value=1, value=1, step=1, key="prog_recor")
+            with col1: data_agendamento = st.date_input("🗓️ Data do Envio:", min_value=datetime.today().date(), key="prog_data")
+            with col2: hora_agendamento = st.time_input("⏰ Hora do Envio:", key="prog_hora", value=datetime.now().time().replace(second=0, microsecond=0))
+            with col3: recorrencia = st.number_input("🔁 Recorrência (vezes):", min_value=1, value=1, step=1, key="prog_recor")
             
-            programar_listas_selecionadas = st.multiselect(
-                "Selecione as Listas para Agendamento:",
-                nomes_listas,
-                key="prog_lists"
-            )
-            
+            programar_listas_selecionadas = st.multiselect("Selecione as Listas para Agendamento:", nomes_listas, key="prog_lists")
             programar_uploaded_file = st.file_uploader("🖼️ Anexar Imagem (Opcional)", type=["png", "jpg", "jpeg"], key="prog_img")
-
-            programar_mensagem = st.text_area(
-                "📝 Mensagem para Agendamento",
-                height=150,
-                key="prog_msg"
-            )
+            programar_mensagem = st.text_area("📝 Mensagem para Agendamento", height=150, key="prog_msg")
             
             submitted = st.form_submit_button("💾 Programar Envio", type="primary")
 
@@ -345,8 +282,7 @@ def app_ui():
                 if not titulo_agendamento.strip(): st.error("O título do agendamento é obrigatório."); return
                 
                 agendamento_dt = datetime.combine(data_agendamento, hora_agendamento)
-                if agendamento_dt <= datetime.now():
-                    st.error("A data e hora de agendamento devem estar no futuro."); return
+                if agendamento_dt <= datetime.now(): st.error("A data e hora de agendamento devem estar no futuro."); return
 
                 # 2. Cria Objeto de Agendamento
                 novo_agendamento = {
@@ -368,15 +304,11 @@ def app_ui():
                 st.rerun()
 
         # --- Lista de Agendamentos Ativos ---
-        st.markdown("---")
-        st.subheader("Agendamentos Ativos (Em Memória)")
+        st.markdown("---"); st.subheader("Agendamentos Ativos (Em Memória)")
         
         if st.session_state['agendamentos_ativos']:
-            
             df_agendamentos = pd.DataFrame(st.session_state['agendamentos_ativos'])
-            df_agendamentos['próximo_envio'] = df_agendamentos['data_execucao'].apply(
-                lambda x: datetime.strptime(x, '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')
-            )
+            df_agendamentos['próximo_envio'] = df_agendamentos['data_execucao'].apply(lambda x: datetime.strptime(x, '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M'))
             
             cols_exibicao = ['próximo_envio', 'titulo', 'recorrencia_restante', 'listas_selecionadas', 'tem_imagem', 'id']
             df_display = df_agendamentos[cols_exibicao]
@@ -396,11 +328,9 @@ def app_ui():
                     st.success(f"✅ Agendamento '{agendamento_cancelado[0]['titulo']}' ({cancel_id}) cancelado com sucesso.")
                     logger.info(f"AGENDAMENTO CANCELADO: ID: {cancel_id}, Título: {agendamento_cancelado[0]['titulo']}")
                     st.rerun()
-                else:
-                    st.error("ID de agendamento não encontrado.")
+                else: st.error("ID de agendamento não encontrado.")
 
-        else:
-            st.info("Nenhum agendamento ativo.")
+        else: st.info("Nenhum agendamento ativo.")
 
 # ====================================================================
 # 🚀 FUNÇÃO DE INICIALIZAÇÃO
