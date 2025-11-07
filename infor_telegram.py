@@ -9,11 +9,22 @@ from gspread.auth import DEFAULT_SCOPES
 import uuid 
 from datetime import datetime, timedelta
 import hashlib 
-import time # Necessário para o WhatsApp
-from selenium import webdriver # Necessário para o WhatsApp
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from urllib.parse import quote # Para codificar URLs do WhatsApp
+import time 
+from urllib.parse import quote 
+import os # ⬅️ NOVO: Necessário para checar variáveis de ambiente do Streamlit Cloud
+from selenium.common.exceptions import WebDriverException # Necessário para tratar o erro
+
+# --- Importações condicionais para evitar crash no Streamlit Cloud ---
+# No Streamlit Cloud, estas importações podem falhar, mas o código as ignora.
+try:
+    from selenium import webdriver 
+    from selenium.webdriver.chrome.service import Service
+    from webdriver_manager.chrome import ChromeDriverManager
+except ImportError:
+    webdriver = None
+    Service = None
+    ChromeDriverManager = None
+    logger.warning("Selenium/WebDriver não está instalado ou o ambiente não suporta.")
 
 # ====================================================================
 # 🚨 1. CONFIGURAÇÃO E LOGGING
@@ -43,8 +54,9 @@ USER_CREDENTIALS = {
 }
 
 # 🛑 CONFIGURAÇÕES DO WHATSAPP NÃO OFICIAL
-WHATSAPP_DELAY_SECONDS = 8 # Atraso mínimo para evitar bloqueio
-WHATSAPP_SESSION_PATH = '/home/charle/whatsapp_session' # Caminho onde o QR code será salvo
+WHATSAPP_DELAY_SECONDS = 8
+# O path deve existir no servidor Ubuntu (não no Streamlit Cloud)
+WHATSAPP_SESSION_PATH = '/home/charle/whatsapp_session' 
 
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
@@ -113,7 +125,6 @@ def carregar_listas_db(worksheet_name):
             
             return DESTINATARIOS
         else:
-            # 🔴 FIX: Retorna {} para evitar TypeError, mas avisa
             st.error(f"ERRO DE COLUNAS na aba '{worksheet_name}'. Obrigatórias: 'lista', 'nome', e '{id_col}'.")
             return {}
 
@@ -131,8 +142,7 @@ def substituir_variaveis(mensagem_original, nome_destinatario):
     
     return mensagem_processada
 
-# --- Funções de Envio de API ---
-
+# --- Funções de Envio de API (Telegram) ---
 def enviar_mensagem_telegram_api(chat_id, mensagem_processada):
     """Envia mensagem de texto via API Telegram."""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -156,11 +166,20 @@ def enviar_foto_telegram_api(chat_id, foto_bytes, legenda_processada):
         return True, response.json()
     except requests.exceptions.RequestException as e: return False, str(e)
 
-
-# ⚠️ Funções de Envio WhatsApp (Selenium - ALTO RISCO)
+# -------------------------------------------------------------
+# ⚠️ FUNÇÕES DO WHATSAPP (SELENIUM - ALTO RISCO)
+# -------------------------------------------------------------
 
 def get_whatsapp_driver():
     """Configura e retorna o driver do Selenium para WhatsApp Web."""
+    
+    # 🔴 NOVO: Se estiver no Streamlit Cloud, bloqueia a inicialização do driver.
+    if os.environ.get('STREAMLIT_SERVER_USER'):
+        raise WebDriverException("O Streamlit Cloud não suporta automação de navegador (Selenium). Use um servidor dedicado.")
+
+    if webdriver is None or ChromeDriverManager is None:
+        raise WebDriverException("Dependências do Selenium não instaladas ou não suportadas.")
+        
     options = webdriver.ChromeOptions()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -181,18 +200,17 @@ def enviar_mensagem_whatsapp_api(driver, numero_destinatario, mensagem_processad
     
     try:
         driver.get(url)
-        time.sleep(5) # Tempo para o URL ser processado e chat abrir
+        time.sleep(5) 
         
-        # ⚠️ Aqui, você precisaria de lógica complexa de Selenium para clicar no botão de envio
+        # ⚠️ Lógica de envio real (depende de By.XPATH) seria implementada aqui.
         
-        time.sleep(WHATSAPP_DELAY_SECONDS) # 🛑 Atraso crítico para evitar bloqueio
+        time.sleep(WHATSAPP_DELAY_SECONDS) 
         
-        return True, "Enviado/Simulado (verifique o WhatsApp Web)."
+        return True, "Enviado/Simulado (Verifique o WhatsApp Web)."
     
     except Exception as e:
         logger.error(f"Erro Selenium/WhatsApp Web para {numero_destinatario}: {e}")
         return False, f"Falha na automação: {e}"
-
 
 # --- Funções de Disparo (Central) ---
 
@@ -205,7 +223,6 @@ def processar_disparo(canal, listas_selecionadas, mensagem_original, uploaded_fi
         file_bytes = uploaded_file.read() 
     
     destinatarios_raw = []
-    
     for nome_lista in listas_selecionadas:
         destinatarios_raw.extend(listas_dados.get(nome_lista, []))
 
@@ -215,13 +232,17 @@ def processar_disparo(canal, listas_selecionadas, mensagem_original, uploaded_fi
 
     total_enviados = 0
     erros = []
-    driver = None
+    driver = None # Inicializa o driver fora do try
 
     if canal == 'WhatsApp':
-        st.info("Iniciando WhatsApp Web. ESCANEIE O QR CODE na janela que abrir se for a primeira vez.")
-        driver = get_whatsapp_driver()
-        driver.get('https://web.whatsapp.com/')
-        time.sleep(15) # Dê tempo para o usuário logar/carregar
+        try:
+            driver = get_whatsapp_driver() # ⬅️ Tenta iniciar o driver
+            st.info("WhatsApp Web iniciado. Escaneie o QR CODE se for necessário.")
+            driver.get('https://web.whatsapp.com/')
+            time.sleep(15) # Dê tempo para o usuário logar/carregar
+        except WebDriverException as e:
+            st.error(f"Falha no WhatsApp: {e}. O envio não será realizado.")
+            return # Sai da função se o driver falhar
 
     try:
         with st.spinner(f'Iniciando envio {canal} para {len(destinatarios)} destinatários...'):
@@ -250,6 +271,7 @@ def processar_disparo(canal, listas_selecionadas, mensagem_original, uploaded_fi
 
                 percentual = (i + 1) / len(destinatarios)
                 progress_bar.progress(percentual, text=f"Enviando... {i + 1} de {len(destinatarios)}")
+    
     finally:
         if driver: driver.quit() # Garante que o navegador seja fechado
 
@@ -263,15 +285,14 @@ def processar_disparo(canal, listas_selecionadas, mensagem_original, uploaded_fi
             
     return total_enviados
 
-# --- Funções Main e Inicialização ---
+# --- Funções Main e Inicialização (Mantidas) ---
 def login_form():
     """Exibe o formulário de login e processa a autenticação."""
     
     hide_streamlit_style_login = """
     <style>
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
-    [data-testid="stToolbar"] {visibility: hidden !important;} 
-    [data-testid="stDecoration"] {visibility: hidden;} 
+    [data-testid="stToolbar"] {visibility: hidden !important;} [data-testid="stDecoration"] {visibility: hidden;} 
     </style>
     """
     st.markdown(hide_streamlit_style_login, unsafe_allow_html=True)
@@ -301,8 +322,7 @@ def app_ui():
     hide_streamlit_style_app = """
     <style>
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
-    [data-testid="stToolbar"] {visibility: hidden !important;} 
-    [data-testid="stDecoration"] {visibility: hidden;} 
+    [data-testid="stToolbar"] {visibility: hidden !important;} [data-testid="stDecoration"] {visibility: hidden;} 
     </style>
     """
     st.markdown(hide_streamlit_style_app, unsafe_allow_html=True)
@@ -325,6 +345,7 @@ def app_ui():
         st.error("Falha ao carregar a lista do Telegram. Verifique as credenciais.")
         return 
     
+    # 3. VERIFICAÇÃO DE ERROS DE COLUNA E FLUXO
     if "Erro de Colunas" in listas_telegram_data:
         st.error("Erro fatal: Colunas da lista TELEGRAM estão incorretas. Verifique 'lista', 'nome', 'ids'.")
         return 
