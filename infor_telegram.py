@@ -7,7 +7,7 @@ import logging
 import json 
 from gspread.auth import DEFAULT_SCOPES 
 import uuid 
-import hashlib 
+from datetime import datetime, timedelta
 
 # ====================================================================
 # 🚨 1. CONFIGURAÇÃO E LOGGING
@@ -29,7 +29,7 @@ BOT_TOKEN = "8586446411:AAH_jXK0Yv6h64gRLhoK3kv2kJo4mG5x3LE"
 CREDENTIALS_FILE = '/home/charle/scripts/chaveBigQuery.json' 
 SHEET_ID = '1HSIwFfIr67i9K318DX1qTwzNtrJmaavLKUlDpW5C6xU' 
 WORKSHEET_NAME_TELEGRAM = 'lista_telegram' 
-WORKSHEET_NAME_WHATSAPP = 'lista_whatsapp' 
+WORKSHEET_NAME_WHATSAPP = 'lista_whatsapp'
 
 USER_CREDENTIALS = {
     "charle": "equipe123",  
@@ -52,6 +52,7 @@ def get_gspread_client():
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         
         if 'google_service_account' in st.secrets:
+            # Autenticação via Streamlit Secrets (Cloud)
             creds_info = dict(st.secrets["google_service_account"]) 
             if isinstance(creds_info, dict):
                  creds_info['private_key'] = creds_info['private_key'].replace('\\n', '\n')
@@ -59,6 +60,7 @@ def get_gspread_client():
             else:
                  creds = Credentials.from_service_account_info(json.loads(creds_info), scopes=DEFAULT_SCOPES)
         else:
+            # Autenticação via arquivo local (Ubuntu Server)
             creds = Credentials.from_json_keyfile_name(CREDENTIALS_FILE, scopes=DEFAULT_SCOPES)
             
         return gspread.authorize(creds)
@@ -84,7 +86,6 @@ def carregar_listas_db(worksheet_name):
         data = worksheet.get_all_records()
         df = pd.DataFrame(data)
         
-        # Colunas esperadas
         id_col = 'ids' if worksheet_name == WORKSHEET_NAME_TELEGRAM else 'numero'
 
         if 'lista' in df.columns and 'nome' in df.columns and id_col in df.columns:
@@ -102,6 +103,7 @@ def carregar_listas_db(worksheet_name):
             
             return DESTINATARIOS
         else:
+            # 🔴 FIX: Retorna {} para evitar TypeError, mas avisa
             st.error(f"ERRO DE COLUNAS na aba '{worksheet_name}'. Obrigatórias: 'lista', 'nome', e '{id_col}'.")
             return {}
 
@@ -115,7 +117,7 @@ def substituir_variaveis(mensagem_original, nome_destinatario):
     nome = nome_destinatario if nome_destinatario else "Cliente"
     
     mensagem_processada = mensagem_original.replace("{nome}", nome)
-    mensagem_processada = mensagem_original.replace("@nome", nome)
+    mensagem_processada = mensagem_processada.replace("@nome", nome)
     
     return mensagem_processada
 
@@ -148,7 +150,7 @@ def enviar_foto_telegram_api(chat_id, foto_bytes, legenda_processada):
 def enviar_mensagem_whatsapp_api(numero_destinatario, mensagem_processada, tem_imagem):
     """Simulação de envio WhatsApp (Placeholder)."""
     
-    logger.warning("Simulação: Tentativa de envio WhatsApp. Ação bloqueada.")
+    logger.warning(f"Simulação: Tentativa de envio WhatsApp para {numero_destinatario}. Ação bloqueada.")
     if tem_imagem:
         return False, "Placeholder: Envio de imagem WhatsApp não implementado."
     
@@ -289,7 +291,7 @@ def app_ui():
         st.error("Falha ao carregar a lista do Telegram. Verifique as credenciais.")
         return 
     
-    # 3. VERIFICAÇÃO DE ERROS DE COLUNA (Permite o app rodar, mas avisa)
+    # 3. VERIFICAÇÃO DE ERROS DE COLUNA E FLUXO
     if "Erro de Colunas" in listas_telegram_data:
         st.error("Erro fatal: Colunas da lista TELEGRAM estão incorretas. Verifique 'lista', 'nome', 'ids'.")
         return 
@@ -316,7 +318,9 @@ def app_ui():
         imediato_mensagem = st.text_area("📝 Mensagem para Disparo (Use {nome} ou @nome para personalizar)", height=150, key="telegram_msg")
         
         imediato_ids_para_disparo = set()
-        for nome_lista in imediato_listas_selecionadas: imediato_ids_para_disparo.update(listas_telegram_data.get(nome_lista, []))
+        for nome_lista in imediato_listas_selecionadas: 
+            destinatarios_da_lista = listas_telegram_data.get(nome_lista, [])
+            imediato_ids_para_disparo.update([d['id'] for d in destinatarios_da_lista])
             
         st.info(f"Telegram: Serão alcançados **{len(imediato_ids_para_disparo)}** CHAT IDs únicos.")
 
@@ -337,7 +341,7 @@ def app_ui():
         whatsapp_mensagem = st.text_area("Mensagem para Disparo (Use {nome} ou @nome para personalizar)", height=150, key="whatsapp_msg")
 
         whatsapp_ids_para_disparo = set()
-        for nome_lista in whatsapp_listas_selecionadas: whatsapp_ids_para_disparo.update(listas_whatsapp_data.get(nome_lista, []))
+        for nome_lista in whatsapp_listas_selecionadas: whatsapp_ids_para_disparo.update([d['id'] for d in listas_whatsapp_data.get(nome_lista, [])])
 
         st.info(f"WhatsApp: Serão alcançados **{len(whatsapp_ids_para_disparo)}** NÚMEROS únicos.")
 
@@ -350,6 +354,7 @@ def app_ui():
 
 # --- Funções Main e Inicialização ---
 def main():
+    """Controla se exibe a tela de login ou a aplicação principal."""
     if st.session_state['logged_in']:
         app_ui()
     else:
