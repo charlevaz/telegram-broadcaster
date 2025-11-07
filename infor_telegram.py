@@ -4,9 +4,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
 import logging
-from datetime import datetime, timedelta
-import uuid 
-import hashlib 
 import json 
 from gspread.auth import DEFAULT_SCOPES 
 
@@ -26,8 +23,9 @@ logger = logging.getLogger(__name__)
 # 🚨 2. CONFIGURAÇÃO DO APP E ESTADO DE SESSÃO
 # ====================================================================
 
+# ⚠️ ATUALIZE ESTES VALORES SE NECESSÁRIO ⚠️
 BOT_TOKEN = "8586446411:AAH_jXK0Yv6h64gRLhoK3kv2kJo4mG5x3LE" 
-CREDENTIALS_FILE = '/home/charle/scripts/chaveBigQuery.json' 
+CREDENTIALS_FILE = '/home/charle/scripts/chaveBigQuery.json' # Usado apenas localmente
 SHEET_ID = '1HSIwFfIr67i9K318DX1qTwzNtrJmaavLKUlDpW5C6xU' 
 WORKSHEET_NAME = 'lista_telegram' 
 
@@ -38,7 +36,6 @@ USER_CREDENTIALS = {
 
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
-# Removida a inicialização de 'agendamentos_ativos'
 
 # ====================================================================
 # 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO
@@ -51,12 +48,13 @@ def get_gspread_client():
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         
         if 'google_service_account' in st.secrets:
-            # 🟢 Autenticação via Streamlit Secrets (Cloud)
+            # 🟢 Autenticação via Streamlit Secrets (Cloud) - Fix para AttrDict
             creds_info = dict(st.secrets["google_service_account"]) 
             if isinstance(creds_info, dict):
                  creds_info['private_key'] = creds_info['private_key'].replace('\\n', '\n')
                  creds = Credentials.from_service_account_info(creds_info, scopes=DEFAULT_SCOPES)
             else:
+                 # Fallback para string JSON (menos comum)
                  creds = Credentials.from_service_account_info(json.loads(creds_info), scopes=DEFAULT_SCOPES)
         else:
             # 🟡 Autenticação via arquivo local (Ubuntu Server)
@@ -168,8 +166,6 @@ def processar_disparo(ids_para_disparo, mensagem, uploaded_file):
             
     return total_enviados
 
-# ❌ FUNÇÃO checar_gatilhos_e_executar FOI REMOVIDA
-
 # ====================================================================
 # 🔒 FUNÇÕES DE LOGIN/LOGOUT (MANTIDAS)
 # ====================================================================
@@ -199,11 +195,13 @@ def logout_button():
 
 def app_ui():
     
-    # 🪄 Oculta o menu de três pontos e a marca d'água
+    # 🪄 CSS CRÍTICO: Oculta o menu de três pontos, o rodapé e a barra de ferramentas (GitHub/Share)
     hide_streamlit_style = """
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    /* 🔴 NOVO FIX: Oculta a barra de ferramentas superior onde estão os ícones Share/GitHub */
+    [data-testid="stToolbar"] {visibility: hidden !important;} 
     </style>
     """
     st.markdown(hide_streamlit_style, unsafe_allow_html=True)
@@ -227,9 +225,7 @@ def app_ui():
     
     nomes_listas = list(lista_destinatarios.keys())
     
-    # ❌ REMOVIDA A CHAMADA checar_gatilhos_e_executar
-
-    # --- NOVO: Não precisamos de abas, o Disparo Imediato é o corpo principal ---
+    # --- Disparo Imediato (Corpo Principal) ---
     
     st.header("Disparo Imediato"); st.markdown("---")
     
