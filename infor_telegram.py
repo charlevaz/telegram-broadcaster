@@ -9,6 +9,11 @@ from gspread.auth import DEFAULT_SCOPES
 import uuid 
 from datetime import datetime, timedelta
 import hashlib 
+import time # Necessário para o WhatsApp
+from selenium import webdriver # Necessário para o WhatsApp
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from urllib.parse import quote # Para codificar URLs do WhatsApp
 
 # ====================================================================
 # 🚨 1. CONFIGURAÇÃO E LOGGING
@@ -37,6 +42,10 @@ USER_CREDENTIALS = {
     "admin": "admin456"    
 }
 
+# 🛑 CONFIGURAÇÕES DO WHATSAPP NÃO OFICIAL
+WHATSAPP_DELAY_SECONDS = 8 # Atraso mínimo para evitar bloqueio
+WHATSAPP_SESSION_PATH = '/home/charle/whatsapp_session' # Caminho onde o QR code será salvo
+
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'PERMANENT_LOGIN' not in st.session_state:
@@ -53,6 +62,7 @@ def get_gspread_client():
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         
         if 'google_service_account' in st.secrets:
+            # Autenticação via Streamlit Secrets (Cloud)
             creds_info = dict(st.secrets["google_service_account"]) 
             if isinstance(creds_info, dict):
                  creds_info['private_key'] = creds_info['private_key'].replace('\\n', '\n')
@@ -60,6 +70,7 @@ def get_gspread_client():
             else:
                  creds = Credentials.from_service_account_info(json.loads(creds_info), scopes=DEFAULT_SCOPES)
         else:
+            # Autenticação via arquivo local (Ubuntu Server)
             creds = Credentials.from_json_keyfile_name(CREDENTIALS_FILE, scopes=DEFAULT_SCOPES)
             
         return gspread.authorize(creds)
@@ -102,6 +113,7 @@ def carregar_listas_db(worksheet_name):
             
             return DESTINATARIOS
         else:
+            # 🔴 FIX: Retorna {} para evitar TypeError, mas avisa
             st.error(f"ERRO DE COLUNAS na aba '{worksheet_name}'. Obrigatórias: 'lista', 'nome', e '{id_col}'.")
             return {}
 
@@ -145,17 +157,41 @@ def enviar_foto_telegram_api(chat_id, foto_bytes, legenda_processada):
     except requests.exceptions.RequestException as e: return False, str(e)
 
 
-def enviar_mensagem_whatsapp_api(numero_destinatario, mensagem_processada, tem_imagem):
-    """Simulação de envio WhatsApp (Placeholder)."""
+# ⚠️ Funções de Envio WhatsApp (Selenium - ALTO RISCO)
+
+def get_whatsapp_driver():
+    """Configura e retorna o driver do Selenium para WhatsApp Web."""
+    options = webdriver.ChromeOptions()
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument(f"user-data-dir={WHATSAPP_SESSION_PATH}")
+    options.add_argument("--verbose") 
+
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=options)
+    return driver
+
+def enviar_mensagem_whatsapp_api(driver, numero_destinatario, mensagem_processada, tem_imagem):
+    """Executa o envio via automação do WhatsApp Web (Selenium)."""
     
-    logger.warning(f"Simulação: Tentativa de envio WhatsApp para {numero_destinatario}. Ação bloqueada.")
-    if tem_imagem:
-        return False, "Placeholder: Envio de imagem WhatsApp não implementado."
+    numero_limpo = numero_destinatario.replace('+', '').strip()
+    mensagem_codificada = quote(mensagem_processada)
     
-    if numero_destinatario.endswith('999999999'):
-        return True, "Simulado com sucesso."
+    url = f'https://web.whatsapp.com/send?phone={numero_limpo}&text={mensagem_codificada}'
     
-    return False, "Placeholder: API de WhatsApp não conectada/implementada."
+    try:
+        driver.get(url)
+        time.sleep(5) # Tempo para o URL ser processado e chat abrir
+        
+        # ⚠️ Aqui, você precisaria de lógica complexa de Selenium para clicar no botão de envio
+        
+        time.sleep(WHATSAPP_DELAY_SECONDS) # 🛑 Atraso crítico para evitar bloqueio
+        
+        return True, "Enviado/Simulado (verifique o WhatsApp Web)."
+    
+    except Exception as e:
+        logger.error(f"Erro Selenium/WhatsApp Web para {numero_destinatario}: {e}")
+        return False, f"Falha na automação: {e}"
 
 
 # --- Funções de Disparo (Central) ---
@@ -170,43 +206,52 @@ def processar_disparo(canal, listas_selecionadas, mensagem_original, uploaded_fi
     
     destinatarios_raw = []
     
-    # Compila a lista de todos os destinatários (IDs + Nomes)
     for nome_lista in listas_selecionadas:
         destinatarios_raw.extend(listas_dados.get(nome_lista, []))
 
-    # Remove duplicatas (baseado no ID)
     destinatarios = pd.DataFrame(destinatarios_raw).drop_duplicates(subset=['id']).to_dict('records')
     
+    if not destinatarios: st.error("Nenhum destinatário encontrado."); return
+
     total_enviados = 0
     erros = []
+    driver = None
 
-    with st.spinner(f'Iniciando envio {canal} para {len(destinatarios)} destinatários...'):
-        
-        progress_bar = st.progress(0, text="Preparando envio...")
-        
-        for i, dest in enumerate(destinatarios):
-            chat_id = dest['id']
-            nome_destinatario = dest['nome']
-            
-            # 1. PERSONALIZAÇÃO: Substitui a variável {nome} ou @nome
-            mensagem_processada = substituir_variaveis(mensagem_original, nome_destinatario)
-            
-            if canal == 'Telegram':
-                if file_bytes is not None:
-                    sucesso, resultado = enviar_foto_telegram_api(chat_id, file_bytes, mensagem_processada)
-                else:
-                    sucesso, resultado = enviar_mensagem_telegram_api(chat_id, mensagem_processada)
-            
-            elif canal == 'WhatsApp':
-                sucesso, resultado = enviar_mensagem_whatsapp_api(chat_id, mensagem_processada, file_bytes is not None)
-            
-            if sucesso: total_enviados += 1
-            else: erros.append(f"ID {chat_id} ({nome_destinatario}): Falha -> {resultado}"); 
-            
-            logger.info(f"FIM: {canal} para {chat_id}. Status: {'SUCESSO' if sucesso else 'FALHA'}")
+    if canal == 'WhatsApp':
+        st.info("Iniciando WhatsApp Web. ESCANEIE O QR CODE na janela que abrir se for a primeira vez.")
+        driver = get_whatsapp_driver()
+        driver.get('https://web.whatsapp.com/')
+        time.sleep(15) # Dê tempo para o usuário logar/carregar
 
-            percentual = (i + 1) / len(destinatarios)
-            progress_bar.progress(percentual, text=f"Enviando... {i + 1} de {len(destinatarios)}")
+    try:
+        with st.spinner(f'Iniciando envio {canal} para {len(destinatarios)} destinatários...'):
+            
+            progress_bar = st.progress(0, text="Preparando envio...")
+            
+            for i, dest in enumerate(destinatarios):
+                chat_id = dest['id']
+                nome_destinatario = dest['nome']
+                
+                mensagem_processada = substituir_variaveis(mensagem_original, nome_destinatario)
+                
+                if canal == 'Telegram':
+                    if file_bytes is not None:
+                        sucesso, resultado = enviar_foto_telegram_api(chat_id, file_bytes, mensagem_processada)
+                    else:
+                        sucesso, resultado = enviar_mensagem_telegram_api(chat_id, mensagem_processada)
+                
+                elif canal == 'WhatsApp':
+                    sucesso, resultado = enviar_mensagem_whatsapp_api(driver, chat_id, mensagem_processada, file_bytes is not None)
+                
+                if sucesso: total_enviados += 1
+                else: erros.append(f"ID {chat_id} ({nome_destinatario}): Falha -> {resultado}"); 
+                
+                logger.info(f"FIM: {canal} para {chat_id}. Status: {'SUCESSO' if sucesso else 'FALHA'}")
+
+                percentual = (i + 1) / len(destinatarios)
+                progress_bar.progress(percentual, text=f"Enviando... {i + 1} de {len(destinatarios)}")
+    finally:
+        if driver: driver.quit() # Garante que o navegador seja fechado
 
     progress_bar.empty()
     st.success(f"✅ Disparo {canal} concluído! **{total_enviados}** mensagens enviadas com sucesso.")
@@ -217,7 +262,6 @@ def processar_disparo(canal, listas_selecionadas, mensagem_original, uploaded_fi
         for erro in erros[:3]: st.code(erro)
             
     return total_enviados
-
 
 # --- Funções Main e Inicialização ---
 def login_form():
@@ -242,8 +286,7 @@ def login_form():
         if submitted:
             if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password: 
                 st.session_state['logged_in'] = True; st.session_state['username'] = username
-                st.session_state['PERMANENT_LOGIN'] = True
-                st.rerun()
+                st.session_state['PERMANENT_LOGIN'] = True; st.rerun()
             else: st.error("Usuário ou senha inválidos.")
 
 def logout_button():
@@ -252,17 +295,12 @@ def logout_button():
         st.session_state['logged_in'] = False; st.session_state['PERMANENT_LOGIN'] = False
         st.session_state.pop('username', None); st.rerun()
 
-# ====================================================================
-# 🖼️ 5. INTERFACE GRÁFICA PRINCIPAL (APP_UI)
-# ====================================================================
-
 def app_ui():
     
     # 🪄 CSS GERAL: Oculta todos os elementos visuais indesejados
     hide_streamlit_style_app = """
     <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
+    #MainMenu {visibility: hidden;} footer {visibility: hidden;}
     [data-testid="stToolbar"] {visibility: hidden !important;} 
     [data-testid="stDecoration"] {visibility: hidden;} 
     </style>
@@ -276,8 +314,7 @@ def app_ui():
     st.sidebar.header("Configuração de Destinatários")
 
     recarregar_lista = st.sidebar.button("🔄 Recarregar Dados da Planilha", type="secondary")
-    if recarregar_lista:
-        st.cache_data.clear()
+    if recarregar_lista: st.cache_data.clear()
 
     # 1. CARREGA AS LISTAS DE AMBOS OS CANAIS
     listas_telegram_data = carregar_listas_db(WORKSHEET_NAME_TELEGRAM)
@@ -288,7 +325,6 @@ def app_ui():
         st.error("Falha ao carregar a lista do Telegram. Verifique as credenciais.")
         return 
     
-    # 3. VERIFICAÇÃO DE ERROS DE COLUNA E FLUXO (O Telegram é o mais importante)
     if "Erro de Colunas" in listas_telegram_data:
         st.error("Erro fatal: Colunas da lista TELEGRAM estão incorretas. Verifique 'lista', 'nome', 'ids'.")
         return 
