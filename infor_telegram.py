@@ -1,8 +1,7 @@
 import streamlit as st
 import requests
 import gspread 
-# 🟢 CORRIGIDO: Usamos a classe Credentials moderna
-from google.oauth2.service_account import Credentials 
+from google.oauth2.service_account import Credentials
 import pandas as pd
 import logging
 from datetime import datetime, timedelta
@@ -51,14 +50,14 @@ def get_gspread_client():
     
     try:
         if 'google_service_account' in st.secrets:
-            # 🟢 Autenticação via Streamlit Secrets (Cloud)
-            creds_info = st.secrets["google_service_account"]
+            # 🟢 CORREÇÃO CRÍTICA: Conversão explícita para dicionário Python padrão.
+            creds_dict = dict(st.secrets["google_service_account"]) 
             
-            if isinstance(creds_info, dict):
-                 # Usa a nova classe Credentials
-                 creds = Credentials.from_service_account_info(creds_info, scopes=DEFAULT_SCOPES)
-            else:
-                 creds = Credentials.from_service_account_info(json.loads(creds_info), scopes=DEFAULT_SCOPES)
+            # Corrige o problema de quebra de linha ('\n')
+            if 'private_key' in creds_dict:
+                 creds_dict['private_key'] = creds_dict['private_key'].replace('\\n', '\n')
+
+            creds = Credentials.from_service_account_info(creds_dict, scopes=DEFAULT_SCOPES)
         else:
             # 🟡 Autenticação via arquivo local (Ubuntu Server)
             creds = Credentials.from_json_keyfile_name(CREDENTIALS_FILE, scopes=DEFAULT_SCOPES)
