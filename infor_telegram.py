@@ -23,9 +23,8 @@ logger = logging.getLogger(__name__)
 # 🚨 2. CONFIGURAÇÃO DO APP E ESTADO DE SESSÃO
 # ====================================================================
 
-# ⚠️ ATUALIZE ESTES VALORES SE NECESSÁRIO ⚠️
 BOT_TOKEN = "8586446411:AAH_jXK0Yv6h64gRLhoK3kv2kJo4mG5x3LE" 
-CREDENTIALS_FILE = '/home/charle/scripts/chaveBigQuery.json' # Usado apenas localmente
+CREDENTIALS_FILE = '/home/charle/scripts/chaveBigQuery.json' 
 SHEET_ID = '1HSIwFfIr67i9K318DX1qTwzNtrJmaavLKUlDpW5C6xU' 
 WORKSHEET_NAME = 'lista_telegram' 
 
@@ -34,13 +33,14 @@ USER_CREDENTIALS = {
     "admin": "admin456"    
 }
 
+# 🟢 NOVO: Inicializa o estado de login com chave de sessão permanente
 if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
+    st.session_state['logged_in'] = st.session_state.get('PERMANENT_LOGIN', False)
 
 # ====================================================================
-# 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO
+# 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO (Mantidas)
+# ...
 # ====================================================================
-
 def get_gspread_client():
     """Retorna o cliente gspread autenticado."""
     
@@ -48,16 +48,13 @@ def get_gspread_client():
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         
         if 'google_service_account' in st.secrets:
-            # 🟢 Autenticação via Streamlit Secrets (Cloud) - Fix para AttrDict
             creds_info = dict(st.secrets["google_service_account"]) 
             if isinstance(creds_info, dict):
                  creds_info['private_key'] = creds_info['private_key'].replace('\\n', '\n')
                  creds = Credentials.from_service_account_info(creds_info, scopes=DEFAULT_SCOPES)
             else:
-                 # Fallback para string JSON (menos comum)
                  creds = Credentials.from_service_account_info(json.loads(creds_info), scopes=DEFAULT_SCOPES)
         else:
-            # 🟡 Autenticação via arquivo local (Ubuntu Server)
             creds = Credentials.from_json_keyfile_name(CREDENTIALS_FILE, scopes=DEFAULT_SCOPES)
             
         return gspread.authorize(creds)
@@ -69,125 +66,109 @@ def get_gspread_client():
 
 @st.cache_data(ttl=300, show_spinner="Buscando lista de destinatários...")
 def carregar_destinatarios_db():
-    """Conecta ao Google Sheets e busca a lista de IDs, agrupando-os por nome da lista."""
-    
     DESTINATARIOS = {} 
-    
     try:
         client = get_gspread_client()
-        if client is None:
-            return {"Erro de Conexão": "0"} 
-
-        sheet = client.open_by_key(SHEET_ID)
-        worksheet = sheet.worksheet(WORKSHEET_NAME)
-        
-        data = worksheet.get_all_records()
-        df = pd.DataFrame(data)
-        
+        if client is None: return {"Erro de Conexão": "0"} 
+        sheet = client.open_by_key(SHEET_ID); worksheet = sheet.worksheet(WORKSHEET_NAME)
+        data = worksheet.get_all_records(); df = pd.DataFrame(data)
         if 'lista' in df.columns and 'ids' in df.columns:
-            
             for index, row in df.iterrows():
-                nome_lista = str(row['lista']).strip()
-                chat_id = str(row['ids']).strip()
-                
+                nome_lista = str(row['lista']).strip(); chat_id = str(row['ids']).strip()
                 if nome_lista and chat_id:
-                    if nome_lista not in DESTINATARIOS:
-                        DESTINATARIOS[nome_lista] = []
+                    if nome_lista not in DESTINATARIOS: DESTINATARIOS[nome_lista] = []
                     DESTINATARIOS[nome_lista].append(chat_id)
-            
             return DESTINATARIOS
-        else:
-            return {"Erro de Colunas": "0"}
-
+        else: return {"Erro de Colunas": "0"}
     except Exception as e:
-        st.error(f"ERRO NA LEITURA DA PLANILHA: {e}") 
-        logger.critical(f"Falha ao carregar a lista de destinatários: {e}")
+        st.error(f"ERRO NA LEITURA DA PLANILHA: {e}"); logger.critical(f"Falha ao carregar a lista de destinatários: {e}")
         return {"Erro de Conexão": "0"}
 
 def enviar_mensagem(chat_id, texto):
-    """Envia apenas texto (Markdown) para um CHAT_ID específico."""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = { 'chat_id': chat_id, 'text': texto, 'parse_mode': 'Markdown' }
-    
     try:
         response = requests.post(url, data=payload); response.raise_for_status()
         return True, response.json()
     except requests.exceptions.RequestException as e: return False, str(e)
 
 def enviar_foto(chat_id, foto_bytes, legenda=None):
-    """Envia uma foto (com legenda opcional) para um CHAT_ID específico."""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     files = {'photo': ('imagem.jpg', foto_bytes, 'image/jpeg')} 
     data = {'chat_id': chat_id}
-    
     if legenda: data['caption'] = legenda; data['parse_mode'] = 'Markdown'
-    
     try:
         response = requests.post(url, files=files, data=data); response.raise_for_status()
         return True, response.json()
     except requests.exceptions.RequestException as e: return False, str(e)
 
 def processar_disparo(ids_para_disparo, mensagem, uploaded_file):
-    """Função central que executa o envio para todos os IDs, com logging e feedback."""
-    
     file_bytes = None
     if uploaded_file is not None:
         if hasattr(uploaded_file, 'seek'): uploaded_file.seek(0)
         file_bytes = uploaded_file.read() 
-    
-    total_enviados = 0
-    erros = []
-
+    total_enviados = 0; erros = []
     with st.spinner(f'Iniciando envio para {len(ids_para_disparo)} destinatários...'):
-        
         progress_bar = st.progress(0, text="Preparando envio...")
-        
         for i, chat_id_unico in enumerate(ids_para_disparo):
-            
-            if file_bytes is not None:
-                sucesso, resultado = enviar_foto(chat_id_unico, file_bytes, mensagem)
-            else:
-                sucesso, resultado = enviar_mensagem(chat_id_unico, mensagem)
-
+            if file_bytes is not None: sucesso, resultado = enviar_foto(chat_id_unico, file_bytes, mensagem)
+            else: sucesso, resultado = enviar_mensagem(chat_id_unico, mensagem)
             if sucesso: total_enviados += 1; logger.info(f"SUCESSO: Mensagem enviada para o ID: {chat_id_unico}")
             else: erros.append(f"ID {chat_id_unico}: Falha -> {resultado}"); logger.error(f"FALHA: Erro ao enviar para o ID {chat_id_unico}. Detalhes: {resultado}")
-
-            percentual = (i + 1) / len(ids_para_disparo)
-            progress_bar.progress(percentual, text=f"Enviando... {i + 1} de {len(ids_para_disparo)}")
-
+            percentual = (i + 1) / len(ids_para_disparo); progress_bar.progress(percentual, text=f"Enviando... {i + 1} de {len(ids_unicos)}")
     progress_bar.empty()
     st.success(f"✅ Disparo concluído! **{total_enviados}** mensagens enviadas com sucesso.")
-    
     logger.info(f"FIM DO DISPARO: Enviados: {total_enviados}, Falhas: {len(erros)}")
-    
     if erros:
         st.warning(f"⚠️ Atenção! Ocorreram {len(erros)} falhas de envio. Verifique o arquivo '{LOG_FILE}' para detalhes.")
         for erro in erros: st.code(erro.split(': Falha -> ')[0])
-            
     return total_enviados
 
 # ====================================================================
-# 🔒 FUNÇÕES DE LOGIN/LOGOUT (MANTIDAS)
+# 🔒 FUNÇÕES DE LOGIN/LOGOUT (Modificado para Persistência)
 # ====================================================================
 
 def login_form():
     """Exibe o formulário de login e processa a autenticação."""
+    
+    # 🔴 NOVO CSS: APLICA ESTILO TAMBÉM NA TELA DE LOGIN
+    hide_streamlit_style_login = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    /* Remove a barra de ferramentas superior (Fork/GitHub) */
+    [data-testid="stToolbar"] {visibility: hidden !important;} 
+    /* Remove a miniatura/coroa do Streamlit Cloud */
+    [data-testid="stDecoration"] {visibility: hidden;} 
+    </style>
+    """
+    st.markdown(hide_streamlit_style_login, unsafe_allow_html=True)
+    
     st.set_page_config(page_title="Login - Broadcaster Telegram", layout="centered")
     st.title("🛡️ Acesso Restrito")
     st.markdown("---")
 
     with st.form("login_form"):
-        username = st.text_input("Usuário:"); password = st.text_input("Senha:", type="password")
+        username = st.text_input("Usuário:")
+        password = st.text_input("Senha:", type="password")
         submitted = st.form_submit_button("Entrar", type="primary")
+
         if submitted:
             if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password: 
-                st.session_state['logged_in'] = True; st.session_state['username'] = username; st.rerun()
+                st.session_state['logged_in'] = True
+                st.session_state['username'] = username
+                # 🟢 NOVO: Variável de sessão persistente para evitar logout no refresh
+                st.session_state['PERMANENT_LOGIN'] = True 
+                st.rerun()
             else: st.error("Usuário ou senha inválidos.")
 
 def logout_button():
     """Botão de Logout simples."""
     if st.sidebar.button("Sair", type="secondary"):
-        st.session_state['logged_in'] = False; st.session_state.pop('username', None); st.rerun()
+        st.session_state['logged_in'] = False
+        st.session_state['PERMANENT_LOGIN'] = False # Limpa a sessão
+        st.session_state.pop('username', None)
+        st.rerun()
 
 # ====================================================================
 # 🖼️ 5. INTERFACE GRÁFICA PRINCIPAL (APP_UI)
@@ -195,16 +176,19 @@ def logout_button():
 
 def app_ui():
     
-    # 🪄 CSS CRÍTICO: Oculta o menu de três pontos, o rodapé e a barra de ferramentas (GitHub/Share)
-    hide_streamlit_style = """
+    # 🪄 NOVO CSS: Oculta todos os elementos visuais indesejados
+    hide_streamlit_style_app = """
     <style>
+    /* Oculta o menu de três pontos e o rodapé */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    /* 🔴 NOVO FIX: Oculta a barra de ferramentas superior onde estão os ícones Share/GitHub */
+    /* Remove a barra de ferramentas superior (GitHub/Share/Fork) */
     [data-testid="stToolbar"] {visibility: hidden !important;} 
+    /* Remove a miniatura/coroa do Streamlit Cloud (Decoração) */
+    [data-testid="stDecoration"] {visibility: hidden;} 
     </style>
     """
-    st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+    st.markdown(hide_streamlit_style_app, unsafe_allow_html=True)
     
     st.set_page_config(page_title="Broadcaster Telegram | Equipe", layout="wide") 
     st.title("📢 Sistema de Disparo Telegram")
