@@ -1,13 +1,15 @@
 import streamlit as st
 import requests
 import gspread 
-from gspread.auth import ServiceAccountCredentials
+# 🟢 CORRIGIDO: Usamos a classe Credentials moderna
+from google.oauth2.service_account import Credentials 
 import pandas as pd
 import logging
 from datetime import datetime, timedelta
 import uuid 
 import hashlib 
 import json 
+from gspread.auth import DEFAULT_SCOPES # Necessário para o gspread.authorize
 
 # ====================================================================
 # 🚨 1. CONFIGURAÇÃO E LOGGING
@@ -41,12 +43,11 @@ if 'agendamentos_ativos' not in st.session_state:
     st.session_state['agendamentos_ativos'] = [] 
 
 # ====================================================================
-# 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO
+# 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO (Corrigido o GSpread)
 # ====================================================================
 
 def get_gspread_client():
     """Retorna o cliente gspread autenticado via Streamlit Secrets ou arquivo local."""
-    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     
     try:
         if 'google_service_account' in st.secrets:
@@ -54,18 +55,19 @@ def get_gspread_client():
             creds_info = st.secrets["google_service_account"]
             
             if isinstance(creds_info, dict):
-                 creds = ServiceAccountCredentials.from_service_account_info(creds_info, scope)
+                 # Usa a nova classe Credentials
+                 creds = Credentials.from_service_account_info(creds_info, scopes=DEFAULT_SCOPES)
             else:
-                 creds = ServiceAccountCredentials.from_service_account_info(json.loads(creds_info), scope)
+                 creds = Credentials.from_service_account_info(json.loads(creds_info), scopes=DEFAULT_SCOPES)
         else:
             # 🟡 Autenticação via arquivo local (Ubuntu Server)
-            creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
+            creds = Credentials.from_json_keyfile_name(CREDENTIALS_FILE, scopes=DEFAULT_SCOPES)
             
+        # O gspread.authorize faz a integração final
         return gspread.authorize(creds)
         
     except Exception as e:
         logger.critical(f"Falha na Autenticação GSpread: {e}")
-        # 🚨 NOVO: Exibimos o erro crítico na interface para diagnóstico
         st.error(f"ERRO DE AUTENTICAÇÃO CRÍTICA: {e}") 
         return None
 
@@ -77,9 +79,7 @@ def carregar_destinatarios_db():
     
     try:
         client = get_gspread_client()
-        # Se a autenticação falhou, client será None, e retornamos o erro
         if client is None:
-            # A mensagem de erro já foi exibida em get_gspread_client()
             return {"Erro de Conexão": "0"} 
 
         sheet = client.open_by_key(SHEET_ID)
@@ -104,7 +104,6 @@ def carregar_destinatarios_db():
             return {"Erro de Colunas": "0"}
 
     except Exception as e:
-        # 🚨 NOVO: Exibimos o erro de leitura na interface
         st.error(f"ERRO NA LEITURA DA PLANILHA: {e}") 
         logger.critical(f"Falha ao carregar a lista de destinatários: {e}")
         return {"Erro de Conexão": "0"}
@@ -230,7 +229,7 @@ def logout_button():
 
 def app_ui():
     
-    # 🪄 NOVO: Oculta o menu de três pontos e a marca d'água
+    # 🪄 Oculta o menu de três pontos e a marca d'água
     hide_streamlit_style = """
     <style>
     #MainMenu {visibility: hidden;}
@@ -253,7 +252,6 @@ def app_ui():
     lista_destinatarios = carregar_destinatarios_db()
     
     # 2. TRATAMENTO DE ERRO NA CONEXÃO
-    # Se a lista não carregar devido a erro, o retorno antecipado evita o travamento
     if "Erro de Conexão" in lista_destinatarios or "Erro de Colunas" in lista_destinatarios:
         return 
     
