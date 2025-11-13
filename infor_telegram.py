@@ -30,10 +30,11 @@ BOT_TOKEN = "8586446411:AAH_jXK0Yv6h64gRLhoK3kv2kJo4mG5x3LE"
 CREDENTIALS_FILE = '/home/charle/scripts/chaveBigQuery.json' 
 SHEET_ID = '1HSIwFfIr67i9K318DX1qTwzNtrJmaavLKUlDpW5C6xU' 
 WORKSHEET_NAME_TELEGRAM = 'lista_telegram' 
+WORKSHEET_NAME_AUTORIZACAO = 'autorizacao' # ⬅️ Nova aba para logs do fetcher
 
 USER_CREDENTIALS = {
-    "charle": "equipe123",  
-    "admin": "admin456"    
+    "operação": "820628", 
+    "charle": "966365"    
 }
 
 if 'logged_in' not in st.session_state:
@@ -42,7 +43,7 @@ if 'PERMANENT_LOGIN' not in st.session_state:
     st.session_state['logged_in'] = st.session_state.get('PERMANENT_LOGIN', False)
 
 # ====================================================================
-# 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO (Foco no Telegram)
+# 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO
 # ====================================================================
 
 def get_gspread_client():
@@ -72,7 +73,7 @@ def get_gspread_client():
 
 @st.cache_data(ttl=300, show_spinner="Buscando listas...")
 def carregar_listas_db(worksheet_name):
-    """Carrega listas do Telegram (agora a única aba de lista)."""
+    """Carrega listas do Telegram."""
     
     DESTINATARIOS = {} 
     
@@ -86,7 +87,6 @@ def carregar_listas_db(worksheet_name):
         data = worksheet.get_all_records()
         df = pd.DataFrame(data)
         
-        # Colunas esperadas: lista, nome, ids
         if 'lista' in df.columns and 'nome' in df.columns and 'ids' in df.columns:
             
             for index, row in df.iterrows():
@@ -97,7 +97,6 @@ def carregar_listas_db(worksheet_name):
                 if nome_lista and destinatario_id:
                     if nome_lista not in DESTINATARIOS:
                         DESTINATARIOS[nome_lista] = []
-                    
                     DESTINATARIOS[nome_lista].append({'id': destinatario_id, 'nome': nome_destinatario})
             
             return DESTINATARIOS
@@ -110,13 +109,35 @@ def carregar_listas_db(worksheet_name):
         logger.critical(f"Falha ao carregar a lista de destinatários ({worksheet_name}): {e}")
         return {"Erro de Conexão": "0"}
 
+@st.cache_data(ttl=600, show_spinner="Verificando autorizações...")
+def carregar_ids_autorizados():
+    """Carrega todos os IDs únicos da aba 'autorizacao'."""
+    try:
+        client = get_gspread_client()
+        if client is None: return set()
+        
+        sheet = client.open_by_key(SHEET_ID)
+        ws_autorizacao = sheet.worksheet(WORKSHEET_NAME_AUTORIZACAO)
+        
+        # Pega todos os valores da primeira coluna (ID_CHAT), pulando o cabeçalho
+        ids = ws_autorizacao.col_values(1)[1:] 
+        
+        # Retorna um set para consulta rápida
+        return set(str(i).strip() for i in ids if str(i).strip())
+        
+    except gspread.WorksheetNotFound:
+        st.warning(f"A aba de autorização '{WORKSHEET_NAME_AUTORIZACAO}' não foi encontrada. Nenhum filtro será aplicado.")
+        return set()
+    except Exception as e:
+        logger.error(f"Erro ao carregar IDs de autorização: {e}")
+        return set()
+
+
 def substituir_variaveis(mensagem_original, nome_destinatario):
     """Substitui as variáveis {nome} ou @nome na mensagem."""
     nome = nome_destinatario if nome_destinatario else "Cliente"
-    
     mensagem_processada = mensagem_original.replace("{nome}", nome)
-    mensagem_processada = mensagem_processada.replace("@nome", nome)
-    
+    mensagem_processada = mensagem_original.replace("@nome", nome)
     return mensagem_processada
 
 # --- Funções de Envio de API ---
@@ -125,7 +146,6 @@ def enviar_mensagem_telegram_api(chat_id, mensagem_processada):
     """Envia mensagem de texto via API Telegram."""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = { 'chat_id': chat_id, 'text': mensagem_processada, 'parse_mode': 'Markdown' }
-    
     try:
         response = requests.post(url, data=payload); response.raise_for_status()
         return True, response.json()
@@ -136,9 +156,7 @@ def enviar_foto_telegram_api(chat_id, foto_bytes, legenda_processada):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     files = {'photo': ('imagem.jpg', foto_bytes, 'image/jpeg')} 
     data = {'chat_id': chat_id}
-    
     if legenda_processada: data['caption'] = legenda_processada; data['parse_mode'] = 'Markdown'
-    
     try:
         response = requests.post(url, files=files, data=data); response.raise_for_status()
         return True, response.json()
@@ -148,40 +166,42 @@ def enviar_foto_telegram_api(chat_id, foto_bytes, legenda_processada):
 # --- Funções de Disparo (Central) ---
 
 def processar_disparo(listas_selecionadas, mensagem_original, uploaded_file, listas_dados):
-    """Função central que executa o envio para o Telegram."""
+    """Função central que executa o envio para o Telegram com filtro de autorização."""
     
     file_bytes = None
     if uploaded_file is not None:
         if hasattr(uploaded_file, 'seek'): uploaded_file.seek(0)
         file_bytes = uploaded_file.read() 
     
+    # 1. Compila lista de todos os destinatários (bruta)
     destinatarios_raw = []
+    for nome_lista in listas_selecionadas: destinatarios_raw.extend(listas_dados.get(nome_lista, []))
     
-    for nome_lista in listas_selecionadas:
-        destinatarios_raw.extend(listas_dados.get(nome_lista, []))
-
-    destinatarios = pd.DataFrame(destinatarios_raw).drop_duplicates(subset=['id']).to_dict('records')
+    # 2. Obtém os IDs autorizados (filtro)
+    ids_autorizados = carregar_ids_autorizados()
     
-    if not destinatarios: st.error("Nenhum destinatário encontrado."); return
+    # 3. FILTRA e remove duplicatas
+    destinatarios = []
+    for dest in destinatarios_raw:
+        if dest['id'] in ids_autorizados:
+            destinatarios.append(dest)
+    
+    destinatarios = pd.DataFrame(destinatarios).drop_duplicates(subset=['id']).to_dict('records')
+    
+    if not destinatarios: st.error("Nenhum destinatário autorizado encontrado para o envio."); return
 
-    total_enviados = 0
-    erros = []
-
+    total_enviados = 0; erros = [];
+    
     with st.spinner(f'Iniciando envio Telegram para {len(destinatarios)} destinatários...'):
         
         progress_bar = st.progress(0, text="Preparando envio...")
         
         for i, dest in enumerate(destinatarios):
-            chat_id = dest['id']
-            nome_destinatario = dest['nome']
-            
-            # 1. PERSONALIZAÇÃO
+            chat_id = dest['id']; nome_destinatario = dest['nome']
             mensagem_processada = substituir_variaveis(mensagem_original, nome_destinatario)
             
-            if file_bytes is not None:
-                sucesso, resultado = enviar_foto_telegram_api(chat_id, file_bytes, mensagem_processada)
-            else:
-                sucesso, resultado = enviar_mensagem_telegram_api(chat_id, mensagem_processada)
+            if file_bytes is not None: sucesso, resultado = enviar_foto_telegram_api(chat_id, file_bytes, mensagem_processada)
+            else: sucesso, resultado = enviar_mensagem_telegram_api(chat_id, mensagem_processada)
             
             if sucesso: total_enviados += 1
             else: erros.append(f"ID {chat_id} ({nome_destinatario}): Falha -> {resultado}"); 
@@ -216,6 +236,8 @@ def login_form():
     st.markdown(hide_streamlit_style_login, unsafe_allow_html=True)
     
     st.set_page_config(page_title="Login - Broadcaster Telegram", layout="centered")
+    
+    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Telegram_logo.svg/100px-Telegram_logo.svg.png", width=100) 
     st.title("🛡️ Acesso Restrito")
     st.markdown("---")
 
@@ -247,6 +269,13 @@ def app_ui():
     st.markdown(hide_streamlit_style_app, unsafe_allow_html=True)
     
     st.set_page_config(page_title="Broadcaster Telegram | Equipe", layout="wide") 
+    
+    # 🆕 LOGO NO CANTO ESQUERDO DA SIDEBAR (usando HTML/Markdown)
+    st.sidebar.markdown(
+        f'<img src="https://raw.githubusercontent.com/charlevaz/telegram-broadcaster/main/cr.png" width="100">', 
+        unsafe_allow_html=True
+    )
+    
     st.title("📢 Sistema de Disparo Telegram")
     st.sidebar.markdown(f"Usuário: **{st.session_state['username']}**")
     logout_button()
@@ -255,7 +284,7 @@ def app_ui():
     recarregar_lista = st.sidebar.button("🔄 Recarregar Dados da Planilha", type="secondary")
     if recarregar_lista: st.cache_data.clear()
 
-    # 1. CARREGA A LISTA DE DESTINATÁRIOS (Apenas Telegram)
+    # 1. CARREGA A LISTA DE DESTINATÁRIOS (Telegram)
     listas_telegram_data = carregar_listas_db(WORKSHEET_NAME_TELEGRAM)
     
     # 2. TRATAMENTO DE ERRO NA CONEXÃO
@@ -280,12 +309,9 @@ def app_ui():
     imediato_uploaded_file = st.file_uploader("🖼️ Anexar Imagem (Opcional)", type=["png", "jpg", "jpeg"], key="telegram_img")
     imediato_mensagem = st.text_area("📝 Mensagem para Disparo (Use {nome} ou @nome para personalizar)", height=150, key="telegram_msg")
     
-    imediato_ids_para_disparo = set()
-    for nome_lista in imediato_listas_selecionadas: 
-        destinatarios_da_lista = listas_telegram_data.get(nome_lista, [])
-        imediato_ids_para_disparo.update([d['id'] for d in destinatarios_da_lista])
-        
-    st.info(f"Telegram: Serão alcançados **{len(imediato_ids_para_disparo)}** CHAT IDs únicos.")
+    # Exibe aviso de filtro de autorização
+    ids_autorizados = carregar_ids_autorizados()
+    st.info(f"Filtro: Apenas **{len(ids_autorizados)}** CHAT IDs que iniciaram conversa com o bot serão alcançados.")
 
     if st.button("🚀 Disparar Telegram Agora", key="btn_telegram", type="primary"):
         if not imediato_listas_selecionadas: st.error("Selecione pelo menos uma Lista."); return
