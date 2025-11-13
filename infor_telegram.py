@@ -38,11 +38,9 @@ USER_CREDENTIALS = {
 }
 
 if 'logged_in' not in st.session_state:
-    # 🟢 CORREÇÃO 1: Inicializa a chave principal com o valor da chave persistente
-    st.session_state['logged_in'] = st.session_state.get('PERMANENT_LOGIN', False)
+    st.session_state['logged_in'] = False
 if 'PERMANENT_LOGIN' not in st.session_state:
-    st.session_state['PERMANENT_LOGIN'] = False
-
+    st.session_state['logged_in'] = st.session_state.get('PERMANENT_LOGIN', False)
 
 # ====================================================================
 # 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO
@@ -55,6 +53,7 @@ def get_gspread_client():
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         
         if 'google_service_account' in st.secrets:
+            # Autenticação via Streamlit Secrets (Cloud)
             creds_info = dict(st.secrets["google_service_account"]) 
             if isinstance(creds_info, dict):
                  creds_info['private_key'] = creds_info['private_key'].replace('\\n', '\n')
@@ -62,6 +61,7 @@ def get_gspread_client():
             else:
                  creds = Credentials.from_service_account_info(json.loads(creds_info), scopes=DEFAULT_SCOPES)
         else:
+            # Autenticação via arquivo local (Ubuntu Server)
             creds = Credentials.from_json_keyfile_name(CREDENTIALS_FILE, scopes=DEFAULT_SCOPES)
             
         return gspread.authorize(creds)
@@ -286,7 +286,7 @@ def app_ui():
     
     st.set_page_config(page_title="Broadcaster Telegram | Equipe", layout="wide") 
     
-    # 🆕 LOGO E TÍTULO DA EMPRESA NO CANTO ESQUERDO DA SIDEBAR
+    # 🆕 1. LOGO E TÍTULO DA EMPRESA NO CANTO ESQUERDO DA SIDEBAR (PRIMEIRO ELEMENTO)
     st.sidebar.markdown(
         f'<div style="text-align: center; margin-bottom: 20px; border-bottom: 1px solid #303030; padding-bottom: 15px;">'
         f'<img src="https://raw.githubusercontent.com/charlevaz/telegram-broadcaster/main/cr.png" width="80" style="border-radius: 10px; box-shadow: 0 0 5px rgba(0,0,0,0.2);">'
@@ -300,15 +300,17 @@ def app_ui():
     logout_button()
     st.sidebar.header("Configuração de Destinatários")
 
-    # 🔴 NOVO BOTÃO: COLETAR IDS
+    # 🔴 NOVO: Botões renderizados na ordem correta
+    
     if st.sidebar.button("🤖 Coletar Novos IDs de Autorização", type="primary"):
         coletar_ids_telegram()
-        st.cache_data.clear() # Limpa cache de listas após coleta
+        st.cache_data.clear()
         st.rerun()
         
     recarregar_lista = st.sidebar.button("🔄 Recarregar Lista de Disparo", type="secondary")
     if recarregar_lista: st.cache_data.clear()
     st.sidebar.markdown('---')
+
 
     # 1. CARREGA A LISTA DE DESTINATÁRIOS (Telegram)
     listas_telegram_data = carregar_listas_db(WORKSHEET_NAME_TELEGRAM)
