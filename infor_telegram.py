@@ -112,7 +112,7 @@ def substituir_variaveis(mensagem_original, nome_destinatario):
     """Substitui as variáveis {nome} ou @nome na mensagem."""
     nome = nome_destinatario if nome_destinatario else "Cliente"
     mensagem_processada = mensagem_original.replace("{nome}", nome)
-    mensagem_processada = mensagem_processada.replace("@nome", nome)
+    mensagem_processada = mensagem_original.replace("@nome", nome)
     return mensagem_processada
 
 def coletar_ids_telegram():
@@ -302,18 +302,22 @@ def app_ui():
     # 🔴 NOVO: Botões renderizados na ordem correta
     
     # Botão 1: Coletar IDs
-    if st.sidebar.button("🤖 Coletar Novos IDs de Autorização", type="primary", use_container_width=True):
+    coletar_ids_btn = st.sidebar.button("🤖 Coletar Novos IDs de Autorização", type="primary", use_container_width=True)
+    
+    # Botão 2: Recarregar a Lista de Disparo
+    recarregar_lista = st.sidebar.button("🔄 Recarregar Lista de Disparo", type="secondary", use_container_width=True)
+    
+    st.sidebar.markdown('---')
+
+    # 3. LÓGICA DE AÇÃO (DEPOIS DA DEFINIÇÃO DOS BOTÕES)
+    if coletar_ids_btn:
         coletar_ids_telegram()
         st.cache_data.clear() # Limpa cache de listas após coleta
         st.rerun()
         
-    # Botão 2: Recarregar a Lista de Disparo
-    recarregar_lista = st.sidebar.button("🔄 Recarregar Lista de Disparo", type="secondary", use_container_width=True)
     if recarregar_lista: 
         st.cache_data.clear()
         st.rerun()
-    
-    st.sidebar.markdown('---')
 
 
     # 1. CARREGA A LISTA DE DESTINATÁRIOS (Telegram)
