@@ -38,9 +38,11 @@ USER_CREDENTIALS = {
 }
 
 if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
-if 'PERMANENT_LOGIN' not in st.session_state:
+    # 🟢 CORREÇÃO 1: Inicializa a chave principal com o valor da chave persistente
     st.session_state['logged_in'] = st.session_state.get('PERMANENT_LOGIN', False)
+if 'PERMANENT_LOGIN' not in st.session_state:
+    st.session_state['PERMANENT_LOGIN'] = False
+
 
 # ====================================================================
 # 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO
@@ -53,7 +55,6 @@ def get_gspread_client():
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         
         if 'google_service_account' in st.secrets:
-            # Autenticação via Streamlit Secrets (Cloud)
             creds_info = dict(st.secrets["google_service_account"]) 
             if isinstance(creds_info, dict):
                  creds_info['private_key'] = creds_info['private_key'].replace('\\n', '\n')
@@ -61,7 +62,6 @@ def get_gspread_client():
             else:
                  creds = Credentials.from_service_account_info(json.loads(creds_info), scopes=DEFAULT_SCOPES)
         else:
-            # Autenticação via arquivo local (Ubuntu Server)
             creds = Credentials.from_json_keyfile_name(CREDENTIALS_FILE, scopes=DEFAULT_SCOPES)
             
         return gspread.authorize(creds)
@@ -167,6 +167,7 @@ def coletar_ids_telegram():
 # --- Funções de Envio de API (Telegram) ---
 # (Mantidas)
 def enviar_mensagem_telegram_api(chat_id, mensagem_processada):
+    """Envia mensagem de texto via API Telegram."""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = { 'chat_id': chat_id, 'text': mensagem_processada, 'parse_mode': 'Markdown' }
     try:
@@ -175,6 +176,7 @@ def enviar_mensagem_telegram_api(chat_id, mensagem_processada):
     except requests.exceptions.RequestException as e: return False, str(e)
 
 def enviar_foto_telegram_api(chat_id, foto_bytes, legenda_processada):
+    """Envia uma foto com legenda via API Telegram."""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     files = {'photo': ('imagem.jpg', foto_bytes, 'image/jpeg')} 
     data = {'chat_id': chat_id}
@@ -244,7 +246,7 @@ def login_form():
     
     st.set_page_config(page_title="Login - Broadcaster Telegram", layout="centered")
     
-    # 🆕 LOGO E TÍTULO NA TELA DE LOGIN
+    # LOGO E TÍTULO NA TELA DE LOGIN
     st.markdown(
         f'<div style="text-align: center;">'
         f'<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Telegram_logo.svg/100px-Telegram_logo.svg.png" width="40" style="vertical-align:middle; margin-right: 10px;">'
