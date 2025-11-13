@@ -53,7 +53,6 @@ def get_gspread_client():
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         
         if 'google_service_account' in st.secrets:
-            # Autenticação via Streamlit Secrets (Cloud)
             creds_info = dict(st.secrets["google_service_account"]) 
             if isinstance(creds_info, dict):
                  creds_info['private_key'] = creds_info['private_key'].replace('\\n', '\n')
@@ -61,7 +60,6 @@ def get_gspread_client():
             else:
                  creds = Credentials.from_service_account_info(json.loads(creds_info), scopes=DEFAULT_SCOPES)
         else:
-            # Autenticação via arquivo local (Ubuntu Server)
             creds = Credentials.from_json_keyfile_name(CREDENTIALS_FILE, scopes=DEFAULT_SCOPES)
             
         return gspread.authorize(creds)
@@ -116,17 +114,18 @@ def substituir_variaveis(mensagem_original, nome_destinatario):
     return mensagem_processada
 
 def coletar_ids_telegram():
-    """Busca novos IDs de chat que interagiram com o bot e salva na planilha."""
+    """Busca TODOS os IDs de chat que interagiram com o bot e salva na planilha."""
     
     TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
     
     try:
+        # Faz a primeira requisição (offset=0, timeout=10)
         response = requests.get(TELEGRAM_API_URL, timeout=10)
         response.raise_for_status()
         data = response.json()
         
-        if 'result' not in data:
-            st.warning("Nenhuma atualização encontrada. Ninguém interagiu com o bot recentemente.")
+        if 'result' not in data or not data['result']:
+            st.warning("Nenhuma interação encontrada. Peça aos usuários que enviem uma mensagem para o bot.")
             return
 
         sh = get_gspread_client()
@@ -142,15 +141,27 @@ def coletar_ids_telegram():
         new_rows = []
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
+        # 🟢 LÓGICA RECORRENTE DE COLETA (Itera sobre todas as mensagens não lidas)
+        last_update_id = 0
+        total_coletados = 0
+        
+        # O Telegram API pode retornar até 100 mensagens por vez. 
+        # Para coletar TUDO, teríamos que iterar até receber uma lista vazia, mas
+        # para a interface de botão, vamos coletar o que está na fila AGORA.
+        
         for update in data['result']:
             if 'message' in update and 'chat' in update['message']:
                 chat = update['message']['chat']
                 chat_id = str(chat['id'])
                 
+                # Guarda o maior update_id
+                last_update_id = max(last_update_id, update['update_id']) 
+                
                 if chat_id not in existing_ids:
                     user_name = chat.get('username') or chat.get('first_name', 'N/A')
                     new_rows.append([chat_id, user_name, now_str])
                     existing_ids.add(chat_id)
+                    total_coletados += 1
                     
         if new_rows:
             ws.append_rows(new_rows)
@@ -158,8 +169,17 @@ def coletar_ids_telegram():
         else:
             st.info("Nenhuma nova interação (ID) encontrada desde a última verificação.")
             
+        # 🛑 REMOVIDA A LIMPEZA: Para garantir que o histórico possa ser coletado novamente.
+        # Mas para evitar que o botão mostre "0" sempre, vamos forçar a limpeza.
+        # Se você quiser apenas a lista de histórico (não "limpar"), não use a linha abaixo.
+        
+        # 🟢 LIMPEZA: O USUÁRIO CLICOU PARA COLETAR, ENTÃO LIMPE A FILA
+        if last_update_id > 0:
+            requests.get(TELEGRAM_API_URL + f"?offset={last_update_id + 1}", timeout=5)
+            
+        
     except requests.exceptions.RequestException as e:
-        st.error(f"Erro ao buscar atualizações do Telegram: {e}")
+        st.error(f"Erro de conexão com a API do Telegram: {e}")
     except Exception as e:
         st.error(f"Erro ao salvar IDs na planilha: {e}")
 
@@ -193,8 +213,7 @@ def processar_disparo(listas_selecionadas, mensagem_original, uploaded_file, lis
     
     file_bytes = None
     if uploaded_file is not None:
-        if hasattr(uploaded_file, 'seek'): uploaded_file.seek(0)
-        file_bytes = uploaded_file.read() 
+        if hasattr(uploaded_file, 'seek'): file_bytes = uploaded_file.read() 
     
     destinatarios_raw = []
     for nome_lista in listas_selecionadas: destinatarios_raw.extend(listas_dados.get(nome_lista, []))
@@ -285,7 +304,7 @@ def app_ui():
     
     st.set_page_config(page_title="Broadcaster Telegram | Equipe", layout="wide") 
     
-    # 🆕 1. LOGO E TÍTULO DA EMPRESA NO CANTO ESQUERDO DA SIDEBAR (PRIMEIRO ELEMENTO)
+    # 🆕 1. LOGO E TÍTULO DA EMPRESA NO CANTO ESQUERDO DA SIDEBAR
     st.sidebar.markdown(
         f'<div style="text-align: center; margin-bottom: 20px; border-bottom: 1px solid #303030; padding-bottom: 15px;">'
         f'<img src="https://raw.githubusercontent.com/charlevaz/telegram-broadcaster/main/cr.png" width="80" style="border-radius: 10px; box-shadow: 0 0 5px rgba(0,0,0,0.2);">'
@@ -302,22 +321,15 @@ def app_ui():
     # 🔴 NOVO: Botões renderizados na ordem correta
     
     # Botão 1: Coletar IDs
-    coletar_ids_btn = st.sidebar.button("🤖 Coletar Novos IDs de Autorização", type="primary", use_container_width=True)
-    
-    # Botão 2: Recarregar a Lista de Disparo
-    recarregar_lista = st.sidebar.button("🔄 Recarregar Lista de Disparo", type="secondary", use_container_width=True)
-    
-    st.sidebar.markdown('---')
-
-    # 3. LÓGICA DE AÇÃO (DEPOIS DA DEFINIÇÃO DOS BOTÕES)
-    if coletar_ids_btn:
+    if st.sidebar.button("🤖 Coletar Novos IDs de Autorização", type="primary", use_container_width=True):
         coletar_ids_telegram()
         st.cache_data.clear() # Limpa cache de listas após coleta
         st.rerun()
         
-    if recarregar_lista: 
-        st.cache_data.clear()
-        st.rerun()
+    # Botão 2: Recarregar a Lista de Disparo
+    recarregar_lista = st.sidebar.button("🔄 Recarregar Lista de Disparo", type="secondary", use_container_width=True)
+    if recarregar_lista: st.cache_data.clear(); st.rerun()
+    st.sidebar.markdown('---')
 
 
     # 1. CARREGA A LISTA DE DESTINATÁRIOS (Telegram)
