@@ -30,7 +30,7 @@ BOT_TOKEN = "8586446411:AAH_jXK0Yv6h64gRLhoK3kv2kJo4mG5x3LE"
 CREDENTIALS_FILE = '/home/charle/scripts/chaveBigQuery.json' 
 SHEET_ID = '1HSIwFfIr67i9K318DX1qTwzNtrJmaavLKUlDpW5C6xU' 
 WORKSHEET_NAME_TELEGRAM = 'lista_telegram' 
-WORKSHEET_NAME_AUTORIZACAO = 'autorizacao' # Aba onde os IDs serão salvos
+WORKSHEET_NAME_AUTORIZACAO = 'autorizacao' 
 
 USER_CREDENTIALS = {
     "operação": "820628", 
@@ -43,7 +43,7 @@ if 'PERMANENT_LOGIN' not in st.session_state:
     st.session_state['logged_in'] = st.session_state.get('PERMANENT_LOGIN', False)
 
 # ====================================================================
-# 🌐 3. FUNÇÕES DE CONEXÃO, COLETA E ENVIO
+# 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO
 # ====================================================================
 
 def get_gspread_client():
@@ -108,6 +108,13 @@ def carregar_listas_db(worksheet_name):
         logger.critical(f"Falha ao carregar a lista de destinatários ({worksheet_name}): {e}")
         return {"Erro de Conexão": "0"}
 
+def substituir_variaveis(mensagem_original, nome_destinatario):
+    """Substitui as variáveis {nome} ou @nome na mensagem."""
+    nome = nome_destinatario if nome_destinatario else "Cliente"
+    mensagem_processada = mensagem_original.replace("{nome}", nome)
+    mensagem_processada = mensagem_original.replace("@nome", nome)
+    return mensagem_processada
+
 def coletar_ids_telegram():
     """Busca novos IDs de chat que interagiram com o bot e salva na planilha."""
     
@@ -125,11 +132,13 @@ def coletar_ids_telegram():
         sh = get_gspread_client()
         if sh is None: return
         
-        ws = sh.worksheet(WORKSHEET_NAME_AUTORIZACAO)
-        
-        # Obtém IDs já existentes (para evitar duplicatas)
+        try:
+            ws = sh.worksheet(WORKSHEET_NAME_AUTORIZACAO)
+        except gspread.WorksheetNotFound:
+            ws = sh.add_worksheet(title=WORKSHEET_NAME_AUTORIZACAO, rows="100", cols="3")
+            ws.update('A1:C1', [['ID_CHAT', 'NOME_USUARIO', 'DATA_AUTORIZACAO']])
+            
         existing_ids = set(ws.col_values(1)[1:]) 
-        
         new_rows = []
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
@@ -141,7 +150,7 @@ def coletar_ids_telegram():
                 if chat_id not in existing_ids:
                     user_name = chat.get('username') or chat.get('first_name', 'N/A')
                     new_rows.append([chat_id, user_name, now_str])
-                    existing_ids.add(chat_id) # Adiciona ao set para evitar duplicatas dentro do loop
+                    existing_ids.add(chat_id)
                     
         if new_rows:
             ws.append_rows(new_rows)
@@ -155,17 +164,9 @@ def coletar_ids_telegram():
         st.error(f"Erro ao salvar IDs na planilha: {e}")
 
 
-def substituir_variaveis(mensagem_original, nome_destinatario):
-    """Substitui as variáveis {nome} ou @nome na mensagem."""
-    nome = nome_destinatario if nome_destinatario else "Cliente"
-    mensagem_processada = mensagem_original.replace("{nome}", nome)
-    mensagem_processada = mensagem_original.replace("@nome", nome)
-    return mensagem_processada
-
 # --- Funções de Envio de API (Telegram) ---
-
+# (Mantidas)
 def enviar_mensagem_telegram_api(chat_id, mensagem_processada):
-    """Envia mensagem de texto via API Telegram."""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = { 'chat_id': chat_id, 'text': mensagem_processada, 'parse_mode': 'Markdown' }
     try:
@@ -174,7 +175,6 @@ def enviar_mensagem_telegram_api(chat_id, mensagem_processada):
     except requests.exceptions.RequestException as e: return False, str(e)
 
 def enviar_foto_telegram_api(chat_id, foto_bytes, legenda_processada):
-    """Envia uma foto com legenda via API Telegram."""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     files = {'photo': ('imagem.jpg', foto_bytes, 'image/jpeg')} 
     data = {'chat_id': chat_id}
@@ -245,7 +245,13 @@ def login_form():
     st.set_page_config(page_title="Login - Broadcaster Telegram", layout="centered")
     
     # 🆕 LOGO E TÍTULO NA TELA DE LOGIN
-    st.markdown('### <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Telegram_logo.svg/100px-Telegram_logo.svg.png" width="40" style="vertical-align:middle; margin-right: 10px;"> **GRUPO CR**', unsafe_allow_html=True) 
+    st.markdown(
+        f'<div style="text-align: center;">'
+        f'<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Telegram_logo.svg/100px-Telegram_logo.svg.png" width="40" style="vertical-align:middle; margin-right: 10px;">'
+        f'<h3>GRUPO CR</h3>'
+        f'</div>',
+        unsafe_allow_html=True
+    ) 
     st.title("🛡️ Acesso Restrito")
     st.markdown("---")
 
@@ -272,8 +278,6 @@ def app_ui():
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
     [data-testid="stToolbar"] {visibility: hidden !important;} 
     [data-testid="stDecoration"] {visibility: hidden;} 
-    /* NEW: Oculta o título/widget de imagem para customizar o header */
-    [data-testid="stSidebar"] > div:first-child > div:nth-child(2) {display: none;}
     </style>
     """
     st.markdown(hide_streamlit_style_app, unsafe_allow_html=True)
@@ -282,9 +286,9 @@ def app_ui():
     
     # 🆕 LOGO E TÍTULO DA EMPRESA NO CANTO ESQUERDO DA SIDEBAR
     st.sidebar.markdown(
-        f'<div style="text-align: center; margin-bottom: 20px;">'
-        f'<img src="https://raw.githubusercontent.com/charlevaz/telegram-broadcaster/main/cr.png" width="100">'
-        f'<h3 style="margin: 0; padding-top: 5px;">GRUPO CR</h3>'
+        f'<div style="text-align: center; margin-bottom: 20px; border-bottom: 1px solid #303030; padding-bottom: 15px;">'
+        f'<img src="https://raw.githubusercontent.com/charlevaz/telegram-broadcaster/main/cr.png" width="80" style="border-radius: 10px; box-shadow: 0 0 5px rgba(0,0,0,0.2);">'
+        f'<h4 style="margin: 0; padding-top: 10px; color: white;">GRUPO CR</h4>'
         f'</div>',
         unsafe_allow_html=True
     )
@@ -297,12 +301,12 @@ def app_ui():
     # 🔴 NOVO BOTÃO: COLETAR IDS
     if st.sidebar.button("🤖 Coletar Novos IDs de Autorização", type="primary"):
         coletar_ids_telegram()
-        st.rerun() # Atualiza a página após a coleta
+        st.cache_data.clear() # Limpa cache de listas após coleta
+        st.rerun()
         
-    st.sidebar.markdown('---')
-    
-    recarregar_lista = st.sidebar.button("🔄 Recarregar Dados da Planilha", type="secondary")
+    recarregar_lista = st.sidebar.button("🔄 Recarregar Lista de Disparo", type="secondary")
     if recarregar_lista: st.cache_data.clear()
+    st.sidebar.markdown('---')
 
     # 1. CARREGA A LISTA DE DESTINATÁRIOS (Telegram)
     listas_telegram_data = carregar_listas_db(WORKSHEET_NAME_TELEGRAM)
