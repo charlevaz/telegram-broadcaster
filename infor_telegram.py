@@ -165,7 +165,6 @@ def coletar_ids_telegram():
 
 
 # --- Funções de Envio de API (Telegram) ---
-# (Mantidas)
 def enviar_mensagem_telegram_api(chat_id, mensagem_processada):
     """Envia mensagem de texto via API Telegram."""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -302,14 +301,26 @@ def app_ui():
 
     # 🔴 NOVO: Botões renderizados na ordem correta
     
-    if st.sidebar.button("🤖 Coletar Novos IDs de Autorização", type="primary"):
+    # Cria os slots (colunas) para os botões na sidebar
+    col1, col2 = st.sidebar.columns(2)
+    
+    with col1:
+        coletar_ids_btn = st.button("🤖 Coletar IDs", type="primary")
+
+    with col2:
+        recarregar_lista = st.button("🔄 Recarregar", type="secondary")
+    
+    st.sidebar.markdown('---')
+
+    # 3. LÓGICA DE AÇÃO (DEPOIS DA DEFINIÇÃO DOS BOTÕES)
+    if coletar_ids_btn:
         coletar_ids_telegram()
-        st.cache_data.clear()
+        st.cache_data.clear() # Limpa cache de listas após coleta
         st.rerun()
         
-    recarregar_lista = st.sidebar.button("🔄 Recarregar Lista de Disparo", type="secondary")
-    if recarregar_lista: st.cache_data.clear()
-    st.sidebar.markdown('---')
+    if recarregar_lista: 
+        st.cache_data.clear()
+        st.rerun()
 
 
     # 1. CARREGA A LISTA DE DESTINATÁRIOS (Telegram)
