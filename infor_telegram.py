@@ -119,7 +119,6 @@ def coletar_ids_telegram():
     TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
     
     try:
-        # Faz a primeira requisição (offset=0, timeout=10)
         response = requests.get(TELEGRAM_API_URL, timeout=10)
         response.raise_for_status()
         data = response.json()
@@ -140,28 +139,18 @@ def coletar_ids_telegram():
         existing_ids = set(ws.col_values(1)[1:]) 
         new_rows = []
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        
-        # 🟢 LÓGICA RECORRENTE DE COLETA (Itera sobre todas as mensagens não lidas)
         last_update_id = 0
-        total_coletados = 0
-        
-        # O Telegram API pode retornar até 100 mensagens por vez. 
-        # Para coletar TUDO, teríamos que iterar até receber uma lista vazia, mas
-        # para a interface de botão, vamos coletar o que está na fila AGORA.
         
         for update in data['result']:
             if 'message' in update and 'chat' in update['message']:
                 chat = update['message']['chat']
                 chat_id = str(chat['id'])
-                
-                # Guarda o maior update_id
-                last_update_id = max(last_update_id, update['update_id']) 
+                last_update_id = max(last_update_id, update['update_id'])
                 
                 if chat_id not in existing_ids:
                     user_name = chat.get('username') or chat.get('first_name', 'N/A')
                     new_rows.append([chat_id, user_name, now_str])
                     existing_ids.add(chat_id)
-                    total_coletados += 1
                     
         if new_rows:
             ws.append_rows(new_rows)
@@ -169,14 +158,9 @@ def coletar_ids_telegram():
         else:
             st.info("Nenhuma nova interação (ID) encontrada desde a última verificação.")
             
-        # 🛑 REMOVIDA A LIMPEZA: Para garantir que o histórico possa ser coletado novamente.
-        # Mas para evitar que o botão mostre "0" sempre, vamos forçar a limpeza.
-        # Se você quiser apenas a lista de histórico (não "limpar"), não use a linha abaixo.
-        
-        # 🟢 LIMPEZA: O USUÁRIO CLICOU PARA COLETAR, ENTÃO LIMPE A FILA
+        # 🔴 CORREÇÃO: Limpa o offset para que o botão funcione corretamente no próximo clique.
         if last_update_id > 0:
             requests.get(TELEGRAM_API_URL + f"?offset={last_update_id + 1}", timeout=5)
-            
         
     except requests.exceptions.RequestException as e:
         st.error(f"Erro de conexão com a API do Telegram: {e}")
