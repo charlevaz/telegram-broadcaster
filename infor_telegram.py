@@ -11,17 +11,19 @@ from datetime import datetime, timedelta
 import hashlib 
 
 # ====================================================================
-# 🚨 1. CONFIGURAÇÃO E LOGGING (Mantida)
-# ...
+# 🚨 1. CONFIGURAÇÃO E LOGGING
 # ====================================================================
 
 LOG_FILE = 'disparo_telegram.log'
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
 # ====================================================================
-# 🚨 2. CONFIGURAÇÃO DO APP E ESTADO DE SESSÃO (Mantida)
-# ...
+# 🚨 2. CONFIGURAÇÃO DO APP E ESTADO DE SESSÃO
 # ====================================================================
 
 BOT_TOKEN = "8586446411:AAH_jXK0Yv6h64gRLhoK3kv2kJo4mG5x3LE" 
@@ -35,12 +37,13 @@ USER_CREDENTIALS = {
     "charle": "966365"    
 }
 
-if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
-if 'PERMANENT_LOGIN' not in st.session_state: st.session_state['logged_in'] = st.session_state.get('PERMANENT_LOGIN', False)
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = False
+if 'PERMANENT_LOGIN' not in st.session_state:
+    st.session_state['logged_in'] = st.session_state.get('PERMANENT_LOGIN', False)
 
 # ====================================================================
-# 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO (Mantidas)
-# ... (Funções de conexão, coleta e envio)
+# 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO
 # ====================================================================
 
 def get_gspread_client():
@@ -276,30 +279,16 @@ def app_ui():
     <style>
     #MainMenu {visibility: hidden;} 
     footer {visibility: hidden;}
-    /* 🔴 NOVO: Garante que o botão de expansão da sidebar (no lado esquerdo da tela) apareça */
-    [data-testid="stToolbar"] {visibility: hidden !important;} 
+    /* Garante que o botão de expansão da sidebar APAREÇA */
+    [data-testid="stToolbar"] {display: none;} /* Este elemento continha os ícones Fork/Share */
     [data-testid="stDecoration"] {visibility: hidden;} 
-    
-    /* 🟢 CORREÇÃO: Força o cursor para o botão de expansão/recolhimento */
-    [data-testid="stSidebar"] {
-        transition: margin-left 0.3s ease-in-out;
-        box-shadow: 0 0 10px rgba(0,0,0,0.1); /* Opcional: Adiciona sombra para destacar */
-    }
-    
-    /* Corrige o problema do ícone de recolhimento na borda da tela */
-    .css-1fv8ic { 
-        position: fixed; 
-        top: 0; 
-        left: 0; 
-        z-index: 999999;
-    }
     </style>
     """
     st.markdown(hide_streamlit_style_app, unsafe_allow_html=True)
     
     st.set_page_config(page_title="Broadcaster Telegram | Equipe", layout="wide") 
     
-    # 🆕 1. LOGO E TÍTULO DA EMPRESA NO CANTO ESQUERDO DA SIDEBAR (CORREÇÃO DE COR)
+    # 🆕 1. LOGO E TÍTULO DA EMPRESA NO CANTO ESQUERDO DA SIDEBAR
     st.sidebar.markdown(
         f'<div style="text-align: center; margin-bottom: 20px; border-bottom: 1px solid #d3d3d3; padding-bottom: 15px;">'
         f'<img src="https://raw.githubusercontent.com/charlevaz/telegram-broadcaster/main/cr.png" width="80" style="border-radius: 10px; box-shadow: 0 0 5px rgba(0,0,0,0.2);">'
@@ -313,12 +302,12 @@ def app_ui():
     logout_button()
     st.sidebar.header("Configuração de Destinatários")
 
-    # 🔴 NOVO: Botões renderizados na ordem correta
+    # 🔴 Botões renderizados na ordem correta
     
     # Botão 1: Coletar IDs
     if st.sidebar.button("🤖 Coletar Novos IDs de Autorização", type="primary", use_container_width=True):
         coletar_ids_telegram()
-        st.cache_data.clear() # Limpa cache de listas após coleta
+        st.cache_data.clear() 
         st.rerun()
         
     # Botão 2: Recarregar a Lista de Disparo
