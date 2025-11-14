@@ -114,7 +114,7 @@ def substituir_variaveis(mensagem_original, nome_destinatario):
     return mensagem_processada
 
 def coletar_ids_telegram():
-    """Busca TODOS os IDs de chat que interagiram com o bot e salva na planilha."""
+    """Busca novos IDs de chat que interagiram com o bot e salva na planilha."""
     
     TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
     
@@ -130,12 +130,23 @@ def coletar_ids_telegram():
         sh = get_gspread_client()
         if sh is None: return
         
+        # 1. Tenta obter a aba. Se não existir, cria com cabeçalho
         try:
             ws = sh.worksheet(WORKSHEET_NAME_AUTORIZACAO)
         except gspread.WorksheetNotFound:
             ws = sh.add_worksheet(title=WORKSHEET_NAME_AUTORIZACAO, rows="100", cols="3")
             ws.update('A1:C1', [['ID_CHAT', 'NOME_USUARIO', 'DATA_AUTORIZACAO']])
+            # Força o cache a limpar para a próxima leitura
+            st.cache_data.clear() 
             
+        # 2. Verifica se o cabeçalho está correto antes de ler (segurança extra)
+        header = ws.row_values(1)
+        if header != ['ID_CHAT', 'NOME_USUARIO', 'DATA_AUTORIZACAO']:
+             # 🔴 Se o cabeçalho estiver errado (com caracteres invisíveis), avisa
+             st.error("ERRO: O cabeçalho da aba 'autorizacao' está incorreto. Exclua a Linha 1 e digite novamente: ID_CHAT, NOME_USUARIO, DATA_AUTORIZACAO.")
+             return
+            
+        # 3. Obtém IDs já existentes e salva novos
         existing_ids = set(ws.col_values(1)[1:]) 
         new_rows = []
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -153,20 +164,21 @@ def coletar_ids_telegram():
                     existing_ids.add(chat_id)
                     
         if new_rows:
+            # 🟢 ESCREVE OS DADOS
             ws.append_rows(new_rows)
             st.success(f"✅ {len(new_rows)} novos usuários de Telegram autorizados e salvos na planilha!")
         else:
             st.info("Nenhuma nova interação (ID) encontrada desde a última verificação.")
             
-        # 🔴 CORREÇÃO: Limpa o offset para que o botão funcione corretamente no próximo clique.
+        # Limpa o offset para que o botão funcione corretamente no próximo clique.
         if last_update_id > 0:
             requests.get(TELEGRAM_API_URL + f"?offset={last_update_id + 1}", timeout=5)
         
     except requests.exceptions.RequestException as e:
         st.error(f"Erro de conexão com a API do Telegram: {e}")
     except Exception as e:
-        st.error(f"Erro ao salvar IDs na planilha: {e}")
-
+        # 🔴 Captura qualquer erro de escrita na planilha e exibe
+        st.error(f"Erro ao salvar IDs na planilha (Verifique as permissões de ESCRITA!): {e}")
 
 # --- Funções de Envio de API (Telegram) ---
 def enviar_mensagem_telegram_api(chat_id, mensagem_processada):
