@@ -116,35 +116,24 @@ def substituir_variaveis(mensagem_original, nome_destinatario):
 def coletar_ids_telegram():
     """Busca novos IDs de chat que interagiram com o bot e salva na planilha."""
     
-    TELEGRAM_API_URL = f"https://api.telegram.com/bot{BOT_TOKEN}/getUpdates"
+    TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
     
     try:
         response = requests.get(TELEGRAM_API_URL, timeout=10)
         response.raise_for_status()
         data = response.json()
 
-        sh_client = get_gspread_client() # ⬅️ Obtém o CLIENTE
+        sh_client = get_gspread_client()
         if sh_client is None: return
-        
-        # 🟢 CORREÇÃO: Abre a planilha ANTES de acessar a aba
-        sh = sh_client.open_by_key(SHEET_ID) 
+
+        sh = sh_client.open_by_key(SHEET_ID)
         
         try:
-            ws = sh.worksheet(WORKSHEET_NAME_AUTORIZACAO) # ws.worksheet funciona em sh
+            ws = sh.worksheet(WORKSHEET_NAME_AUTORIZACAO)
         except gspread.WorksheetNotFound:
             ws = sh.add_worksheet(title=WORKSHEET_NAME_AUTORIZACAO, rows="100", cols="3")
             ws.update('A1:C1', [['ID_CHAT', 'NOME_USUARIO', 'DATA_AUTORIZACAO']])
-            # Força o cache a limpar para a próxima leitura
-            st.cache_data.clear() 
             
-        # 2. Verifica se o cabeçalho está correto antes de ler (segurança extra)
-        header = ws.row_values(1)
-        if header != ['ID_CHAT', 'NOME_USUARIO', 'DATA_AUTORIZACAO']:
-             # 🔴 Se o cabeçalho estiver errado (com caracteres invisíveis), avisa
-             st.error("ERRO: O cabeçalho da aba 'autorizacao' está incorreto. Exclua a Linha 1 e digite novamente: ID_CHAT, NOME_USUARIO, DATA_AUTORIZACAO.")
-             return
-            
-        # 3. Obtém IDs já existentes e salva novos
         existing_ids = set(ws.col_values(1)[1:]) 
         new_rows = []
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -162,7 +151,6 @@ def coletar_ids_telegram():
                     existing_ids.add(chat_id)
                     
         if new_rows:
-            # 🟢 ESCREVE OS DADOS
             ws.append_rows(new_rows, value_input_option='RAW')
             st.success(f"✅ {len(new_rows)} novos usuários de Telegram autorizados e salvos na planilha!")
         else:
@@ -173,10 +161,10 @@ def coletar_ids_telegram():
             requests.get(TELEGRAM_API_URL + f"?offset={last_update_id + 1}", timeout=5)
         
     except requests.exceptions.RequestException as e:
-        st.error(f"Erro de conexão com a API do Telegram: {e}")
+        st.error(f"Erro ao buscar atualizações do Telegram: {e}")
     except Exception as e:
-        # 🔴 Captura qualquer erro de escrita na planilha e exibe
-        st.error(f"Erro ao salvar IDs na planilha (Verifique as permissões de ESCRITA!): {e}")
+        st.error(f"Erro ao salvar IDs na planilha: {e}")
+
 
 # --- Funções de Envio de API (Telegram) ---
 def enviar_mensagem_telegram_api(chat_id, mensagem_processada):
@@ -298,11 +286,11 @@ def app_ui():
     
     st.set_page_config(page_title="Broadcaster Telegram | Equipe", layout="wide") 
     
-    # 🆕 1. LOGO E TÍTULO DA EMPRESA NO CANTO ESQUERDO DA SIDEBAR
+    # 🆕 1. LOGO E TÍTULO DA EMPRESA NO CANTO ESQUERDO DA SIDEBAR (CORREÇÃO DE COR)
     st.sidebar.markdown(
-        f'<div style="text-align: center; margin-bottom: 20px; border-bottom: 1px solid #303030; padding-bottom: 15px;">'
+        f'<div style="text-align: center; margin-bottom: 20px; border-bottom: 1px solid #d3d3d3; padding-bottom: 15px;">'
         f'<img src="https://raw.githubusercontent.com/charlevaz/telegram-broadcaster/main/cr.png" width="80" style="border-radius: 10px; box-shadow: 0 0 5px rgba(0,0,0,0.2);">'
-        f'<h4 style="margin: 0; padding-top: 10px; color: white;">GRUPO CR</h4>'
+        f'<h4 style="margin: 0; padding-top: 10px; color: black;">GRUPO CR</h4>'
         f'</div>',
         unsafe_allow_html=True
     )
