@@ -52,14 +52,21 @@ def get_gspread_client():
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         
+        # 🟢 VERIFICA O AMBIENTE CLOUD PRIMEIRO
         if 'google_service_account' in st.secrets:
             creds_info = dict(st.secrets["google_service_account"]) 
+            
+            # 🟢 FIX: Garantia contra o erro AttrDict/string JSON vazia
+            if not creds_info:
+                 raise ValueError("O Segredo 'google_service_account' está vazio.")
+            
             if isinstance(creds_info, dict):
                  creds_info['private_key'] = creds_info['private_key'].replace('\\n', '\n')
                  creds = Credentials.from_service_account_info(creds_info, scopes=DEFAULT_SCOPES)
             else:
                  creds = Credentials.from_service_account_info(json.loads(creds_info), scopes=DEFAULT_SCOPES)
         else:
+            # 🟡 AMBIENTE LOCAL (Ubuntu Server)
             creds = Credentials.from_json_keyfile_name(CREDENTIALS_FILE, scopes=DEFAULT_SCOPES)
             
         return gspread.authorize(creds)
@@ -76,10 +83,10 @@ def carregar_listas_db(worksheet_name):
     DESTINATARIOS = {} 
     
     try:
-        client = get_gspread_client()
-        if client is None: return {"Erro de Conexão": "0"} 
+        sh_client = get_gspread_client() # ⬅️ Corrigido o nome da variável
+        if sh_client is None: return {"Erro de Conexão": "0"} 
 
-        sheet = client.open_by_key(SHEET_ID)
+        sheet = sh_client.open_by_key(SHEET_ID) # ⬅️ Abre a planilha
         worksheet = sheet.worksheet(worksheet_name)
         
         data = worksheet.get_all_records()
@@ -110,41 +117,35 @@ def substituir_variaveis(mensagem_original, nome_destinatario):
     """Substitui as variáveis {nome} ou @nome na mensagem."""
     nome = nome_destinatario if nome_destinatario else "Cliente"
     mensagem_processada = mensagem_original.replace("{nome}", nome)
-    mensagem_processada = mensagem_original.replace("@nome", nome)
+    mensagem_processada = mensagem_processada.replace("@nome", nome)
     return mensagem_processada
 
 def coletar_ids_telegram():
-    """Busca novos IDs de chat que interagiram com o bot e salva na planilha."""
+    """Busca TODOS os IDs de chat que interagiram com o bot e salva na planilha."""
     
-    TELEGRAM_API_URL = f"https://api.telegram.com/bot{BOT_TOKEN}/getUpdates"
+    TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
     
     try:
         response = requests.get(TELEGRAM_API_URL, timeout=10)
         response.raise_for_status()
         data = response.json()
-
-        sh_client = get_gspread_client() # ⬅️ Obtém o CLIENTE
-        if sh_client is None: return
         
-        # 🟢 CORREÇÃO: Abre a planilha ANTES de acessar a aba
-        sh = sh_client.open_by_key(SHEET_ID) 
+        if 'result' not in data or not data['result']:
+            st.warning("Nenhuma interação encontrada. Peça aos usuários que enviem uma mensagem para o bot.")
+            return
+
+        sh_client = get_gspread_client()
+        if sh_client is None: return
+
+        # 🟢 Corrigido o fluxo de abertura da planilha
+        sh = sh_client.open_by_key(SHEET_ID)
         
         try:
-            ws = sh.worksheet(WORKSHEET_NAME_AUTORIZACAO) # ws.worksheet funciona em sh
+            ws = sh.worksheet(WORKSHEET_NAME_AUTORIZACAO)
         except gspread.WorksheetNotFound:
             ws = sh.add_worksheet(title=WORKSHEET_NAME_AUTORIZACAO, rows="100", cols="3")
             ws.update('A1:C1', [['ID_CHAT', 'NOME_USUARIO', 'DATA_AUTORIZACAO']])
-            # Força o cache a limpar para a próxima leitura
-            st.cache_data.clear() 
             
-        # 2. Verifica se o cabeçalho está correto antes de ler (segurança extra)
-        header = ws.row_values(1)
-        if header != ['ID_CHAT', 'NOME_USUARIO', 'DATA_AUTORIZACAO']:
-             # 🔴 Se o cabeçalho estiver errado (com caracteres invisíveis), avisa
-             st.error("ERRO: O cabeçalho da aba 'autorizacao' está incorreto. Exclua a Linha 1 e digite novamente: ID_CHAT, NOME_USUARIO, DATA_AUTORIZACAO.")
-             return
-            
-        # 3. Obtém IDs já existentes e salva novos
         existing_ids = set(ws.col_values(1)[1:]) 
         new_rows = []
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -162,21 +163,19 @@ def coletar_ids_telegram():
                     existing_ids.add(chat_id)
                     
         if new_rows:
-            # 🟢 ESCREVE OS DADOS
-            ws.append_rows(new_rows, value_input_option='RAW')
+            ws.append_rows(new_rows, value_input_option='RAW') # Usando RAW
             st.success(f"✅ {len(new_rows)} novos usuários de Telegram autorizados e salvos na planilha!")
         else:
             st.info("Nenhuma nova interação (ID) encontrada desde a última verificação.")
             
-        # Limpa o offset para que o botão funcione corretamente no próximo clique.
         if last_update_id > 0:
             requests.get(TELEGRAM_API_URL + f"?offset={last_update_id + 1}", timeout=5)
         
     except requests.exceptions.RequestException as e:
         st.error(f"Erro de conexão com a API do Telegram: {e}")
     except Exception as e:
-        # 🔴 Captura qualquer erro de escrita na planilha e exibe
-        st.error(f"Erro ao salvar IDs na planilha (Verifique as permissões de ESCRITA!): {e}")
+        st.error(f"Erro ao salvar IDs na planilha: {e}")
+
 
 # --- Funções de Envio de API (Telegram) ---
 def enviar_mensagem_telegram_api(chat_id, mensagem_processada):
