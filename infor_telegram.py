@@ -26,16 +26,9 @@ logger = logging.getLogger(__name__)
 # 🚨 2. CONFIGURAÇÃO DO APP E ESTADO DE SESSÃO
 # ====================================================================
 
-BOT_TOKEN = "8586446411:AAH_jXK0Yv6h64gRLhoK3kv2kJo4mG5x3LE" 
-CREDENTIALS_FILE = '/home/charle/scripts/chaveBigQuery.json' 
-SHEET_ID = '1HSIwFfIr67i9K318DX1qTwzNtrJmaavLKUlDpW5C6xU' 
-WORKSHEET_NAME_TELEGRAM = 'lista_telegram' 
-WORKSHEET_NAME_AUTORIZACAO = 'autorizacao' 
-
-USER_CREDENTIALS = {
-    "operação": "820628", 
-    "charle": "966365"    
-}
+BOT_TOKEN = st.secrets["telegram_bot_token"] 
+SHEET_ID = st.secrets["google_sheet_id"] 
+USER_CREDENTIALS = st.secrets["app_credentials"]
 
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
