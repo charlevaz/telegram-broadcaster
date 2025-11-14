@@ -85,11 +85,17 @@ def carregar_listas_db(worksheet_name):
         data = worksheet.get_all_records()
         df = pd.DataFrame(data)
         
-        if 'lista' in df.columns and 'nome' in df.columns and 'ids' in df.columns:
+        # O usuário usa 'numero' em algumas abas, mas o código espera 'ids'
+        # Adicionei uma verificação para a coluna correta para evitar erros
+        id_col = 'ids'
+        if id_col not in df.columns and 'numero' in df.columns:
+            id_col = 'numero'
+            
+        if 'lista' in df.columns and 'nome' in df.columns and id_col in df.columns:
             
             for index, row in df.iterrows():
                 nome_lista = str(row['lista']).strip()
-                destinatario_id = str(row['ids']).strip()
+                destinatario_id = str(row[id_col]).strip()
                 nome_destinatario = str(row['nome']).strip()
                 
                 if nome_lista and destinatario_id:
@@ -98,7 +104,7 @@ def carregar_listas_db(worksheet_name):
             
             return DESTINATARIOS
         else:
-            st.error(f"ERRO DE COLUNAS na aba '{worksheet_name}'. Obrigatórias: 'lista', 'nome', e 'ids'.")
+            st.error(f"ERRO DE COLUNAS na aba '{worksheet_name}'. Obrigatórias: 'lista', 'nome', e 'ids' (ou 'numero').")
             return {"Erro de Colunas": "0"}
 
     except Exception as e:
@@ -274,12 +280,12 @@ def logout_button():
 
 def app_ui():
     
-    # 🪄 CSS GERAL: Oculta todos os elementos visuais indesejados
+    # 🪄 CSS GERAL: Oculta elementos indesejados, mas MANTÉM o botão de expansão
     hide_streamlit_style_app = """
     <style>
-    #MainMenu {visibility: hidden;} footer {visibility: hidden;}
-    [data-testid="stToolbar"] {visibility: hidden !important;} 
-    [data-testid="stDecoration"] {visibility: hidden;} 
+    #MainMenu {visibility: hidden;} 
+    footer {visibility: hidden;}
+    /* Removido: stToolbar e stDecoration para garantir que o botão de expansão da sidebar seja mantido. */
     </style>
     """
     st.markdown(hide_streamlit_style_app, unsafe_allow_html=True)
