@@ -32,15 +32,19 @@ SHEET_ID = '1HSIwFfIr67i9K318DX1qTwzNtrJmaavLKUlDpW5C6xU'
 WORKSHEET_NAME_TELEGRAM = 'lista_telegram' 
 WORKSHEET_NAME_AUTORIZACAO = 'autorizacao' 
 
+# 🟢 CONFIGURAÇÃO DE ACESSO NO ESCOPO GLOBAL
 USER_CREDENTIALS = {
     "operação": "820628", 
     "charle": "966365"    
 }
+ADMIN_USERS = ["charle"] 
 
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'PERMANENT_LOGIN' not in st.session_state:
     st.session_state['logged_in'] = st.session_state.get('PERMANENT_LOGIN', False)
+if 'user_level' not in st.session_state:
+    st.session_state['user_level'] = 'Operacional'
 
 # ====================================================================
 # 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO
@@ -278,28 +282,24 @@ def app_ui():
     
     user_is_admin = st.session_state.get('user_level', 'Operacional') == 'Admin'
     
-    # 🪄 CSS GERAL: OCULTA ELEMENTOS INDESEJADOS E CORRIGE O BOTÃO DE RECOLHIMENTO
+    # 🪄 CSS GERAL: Oculta elementos indesejados, mas MANTÉM o botão de expansão
     hide_streamlit_style_app = """
     <style>
     #MainMenu {visibility: hidden;} 
     footer {visibility: hidden;}
-    /* Remove a barra de ferramentas superior (Fork/Share) */
-    [data-testid="stToolbar"] {display: none;}
-    /* Remove a miniatura/coroa do Streamlit Cloud */
-    [data-testid="stDecoration"] {visibility: hidden;} 
-    
-    /* 🛑 CORREÇÃO CRÍTICA: Oculta o botão de recolhimento/expansão nativo para todos. 
-       Isso força a sidebar a ficar sempre aberta (evitando o bug de "não retornar"). */
+    /* 🔴 CORREÇÃO FINAL: Garante que o botão de expansão da sidebar seja escondido (UX) */
     [data-testid="stSidebarToggleButton"] {
         display: none !important;
     }
+    [data-testid="stToolbar"] {visibility: hidden !important;} 
+    [data-testid="stDecoration"] {visibility: hidden;} 
     </style>
     """
     st.markdown(hide_streamlit_style_app, unsafe_allow_html=True)
     
     st.set_page_config(page_title="Broadcaster Telegram | Equipe", layout="wide") 
     
-    # 🆕 1. LOGO E TÍTULO DA EMPRESA NO CANTO ESQUERDO DA SIDEBAR (FLUXO CORRIGIDO)
+    # 🆕 1. LOGO E TÍTULO DA EMPRESA NO CANTO ESQUERDO DA SIDEBAR
     st.sidebar.markdown(
         f'<div style="text-align: center; margin-bottom: 20px; border-bottom: 1px solid #d3d3d3; padding-bottom: 15px;">'
         f'<img src="https://raw.githubusercontent.com/charlevaz/telegram-broadcaster/main/cr.png" width="80" style="border-radius: 10px; box-shadow: 0 0 5px rgba(0,0,0,0.2);">'
