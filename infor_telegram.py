@@ -165,7 +165,7 @@ def coletar_ids_telegram():
                     
         if new_rows:
             # 🟢 ESCREVE OS DADOS
-            ws.append_rows(new_rows)
+            ws.append_rows(new_rows, value_input_option='RAW')
             st.success(f"✅ {len(new_rows)} novos usuários de Telegram autorizados e salvos na planilha!")
         else:
             st.info("Nenhuma nova interação (ID) encontrada desde a última verificação.")
