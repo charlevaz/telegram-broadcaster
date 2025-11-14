@@ -116,23 +116,21 @@ def substituir_variaveis(mensagem_original, nome_destinatario):
 def coletar_ids_telegram():
     """Busca novos IDs de chat que interagiram com o bot e salva na planilha."""
     
-    TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+    TELEGRAM_API_URL = f"https://api.telegram.com/bot{BOT_TOKEN}/getUpdates"
     
     try:
         response = requests.get(TELEGRAM_API_URL, timeout=10)
         response.raise_for_status()
         data = response.json()
-        
-        if 'result' not in data or not data['result']:
-            st.warning("Nenhuma interação encontrada. Peça aos usuários que enviem uma mensagem para o bot.")
-            return
 
-        sh = get_gspread_client()
-        if sh is None: return
+        sh_client = get_gspread_client() # ⬅️ Obtém o CLIENTE
+        if sh_client is None: return
         
-        # 1. Tenta obter a aba. Se não existir, cria com cabeçalho
+        # 🟢 CORREÇÃO: Abre a planilha ANTES de acessar a aba
+        sh = sh_client.open_by_key(SHEET_ID) 
+        
         try:
-            ws = sh.worksheet(WORKSHEET_NAME_AUTORIZACAO)
+            ws = sh.worksheet(WORKSHEET_NAME_AUTORIZACAO) # ws.worksheet funciona em sh
         except gspread.WorksheetNotFound:
             ws = sh.add_worksheet(title=WORKSHEET_NAME_AUTORIZACAO, rows="100", cols="3")
             ws.update('A1:C1', [['ID_CHAT', 'NOME_USUARIO', 'DATA_AUTORIZACAO']])
