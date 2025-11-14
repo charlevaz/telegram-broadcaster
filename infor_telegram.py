@@ -11,19 +11,17 @@ from datetime import datetime, timedelta
 import hashlib 
 
 # ====================================================================
-# 🚨 1. CONFIGURAÇÃO E LOGGING
+# 🚨 1. CONFIGURAÇÃO E LOGGING (Mantida)
+# ...
 # ====================================================================
 
 LOG_FILE = 'disparo_telegram.log'
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger(__name__)
 
 # ====================================================================
-# 🚨 2. CONFIGURAÇÃO DO APP E ESTADO DE SESSÃO
+# 🚨 2. CONFIGURAÇÃO DO APP E ESTADO DE SESSÃO (Mantida)
+# ...
 # ====================================================================
 
 BOT_TOKEN = "8586446411:AAH_jXK0Yv6h64gRLhoK3kv2kJo4mG5x3LE" 
@@ -37,13 +35,12 @@ USER_CREDENTIALS = {
     "charle": "966365"    
 }
 
-if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
-if 'PERMANENT_LOGIN' not in st.session_state:
-    st.session_state['logged_in'] = st.session_state.get('PERMANENT_LOGIN', False)
+if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
+if 'PERMANENT_LOGIN' not in st.session_state: st.session_state['logged_in'] = st.session_state.get('PERMANENT_LOGIN', False)
 
 # ====================================================================
-# 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO
+# 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO (Mantidas)
+# ... (Funções de conexão, coleta e envio)
 # ====================================================================
 
 def get_gspread_client():
@@ -85,17 +82,11 @@ def carregar_listas_db(worksheet_name):
         data = worksheet.get_all_records()
         df = pd.DataFrame(data)
         
-        # O usuário usa 'numero' em algumas abas, mas o código espera 'ids'
-        # Adicionei uma verificação para a coluna correta para evitar erros
-        id_col = 'ids'
-        if id_col not in df.columns and 'numero' in df.columns:
-            id_col = 'numero'
-            
-        if 'lista' in df.columns and 'nome' in df.columns and id_col in df.columns:
+        if 'lista' in df.columns and 'nome' in df.columns and 'ids' in df.columns:
             
             for index, row in df.iterrows():
                 nome_lista = str(row['lista']).strip()
-                destinatario_id = str(row[id_col]).strip()
+                destinatario_id = str(row['ids']).strip()
                 nome_destinatario = str(row['nome']).strip()
                 
                 if nome_lista and destinatario_id:
@@ -104,7 +95,7 @@ def carregar_listas_db(worksheet_name):
             
             return DESTINATARIOS
         else:
-            st.error(f"ERRO DE COLUNAS na aba '{worksheet_name}'. Obrigatórias: 'lista', 'nome', e 'ids' (ou 'numero').")
+            st.error(f"ERRO DE COLUNAS na aba '{worksheet_name}'. Obrigatórias: 'lista', 'nome', e 'ids'.")
             return {"Erro de Colunas": "0"}
 
     except Exception as e:
@@ -285,7 +276,23 @@ def app_ui():
     <style>
     #MainMenu {visibility: hidden;} 
     footer {visibility: hidden;}
-    /* Removido: stToolbar e stDecoration para garantir que o botão de expansão da sidebar seja mantido. */
+    /* 🔴 NOVO: Garante que o botão de expansão da sidebar (no lado esquerdo da tela) apareça */
+    [data-testid="stToolbar"] {visibility: hidden !important;} 
+    [data-testid="stDecoration"] {visibility: hidden;} 
+    
+    /* 🟢 CORREÇÃO: Força o cursor para o botão de expansão/recolhimento */
+    [data-testid="stSidebar"] {
+        transition: margin-left 0.3s ease-in-out;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1); /* Opcional: Adiciona sombra para destacar */
+    }
+    
+    /* Corrige o problema do ícone de recolhimento na borda da tela */
+    .css-1fv8ic { 
+        position: fixed; 
+        top: 0; 
+        left: 0; 
+        z-index: 999999;
+    }
     </style>
     """
     st.markdown(hide_streamlit_style_app, unsafe_allow_html=True)
