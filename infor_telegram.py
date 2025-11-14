@@ -32,10 +32,9 @@ SHEET_ID = '1HSIwFfIr67i9K318DX1qTwzNtrJmaavLKUlDpW5C6xU'
 WORKSHEET_NAME_TELEGRAM = 'lista_telegram' 
 WORKSHEET_NAME_AUTORIZACAO = 'autorizacao' 
 
-# 🟢 NÍVEIS DE ACESSO DEFINIDOS
 USER_CREDENTIALS = {
-    "operação": "820628", # OPERACIONAL
-    "charle": "966365"    # ADMIN
+    "operação": "820628", 
+    "charle": "966365"    
 }
 ADMIN_USERS = ["charle"] 
 
@@ -43,9 +42,8 @@ if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'PERMANENT_LOGIN' not in st.session_state:
     st.session_state['logged_in'] = st.session_state.get('PERMANENT_LOGIN', False)
-# Novo: Armazena o nível de acesso
 if 'user_level' not in st.session_state:
-    st.session_state['user_level'] = 'Operacional' 
+    st.session_state['user_level'] = 'Operacional'
 
 # ====================================================================
 # 🌐 3. FUNÇÕES DE CONEXÃO E ENVIO
@@ -267,6 +265,7 @@ def login_form():
         if submitted:
             if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password: 
                 st.session_state['logged_in'] = True; st.session_state['username'] = username
+                st.session_state['user_level'] = 'Admin' if username in ADMIN_USERS else 'Operacional' # Define o nível
                 st.session_state['PERMANENT_LOGIN'] = True; st.rerun()
             else: st.error("Usuário ou senha inválidos.")
 
@@ -274,35 +273,31 @@ def logout_button():
     """Botão de Logout simples."""
     if st.sidebar.button("Sair", type="secondary"):
         st.session_state['logged_in'] = False; st.session_state['PERMANENT_LOGIN'] = False
-        st.session_state.pop('username', None); st.rerun()
+        st.session_state.pop('username', None)
+        st.session_state.pop('user_level', None)
+        st.rerun()
 
 def app_ui():
     
-    user_is_admin = st.session_state['username'] in ADMIN_USERS
+    user_is_admin = st.session_state.get('user_level', 'Operacional') == 'Admin'
     
-    # 🪄 CSS GERAL: APLICA REGRAS GERAIS E OCULTA O BOTÃO DE RECOLHIMENTO PARA OPERACIONAIS
+    # 🪄 CSS GERAL: Oculta elementos indesejados, mas MANTÉM o botão de expansão
     hide_streamlit_style_app = """
     <style>
     #MainMenu {visibility: hidden;} 
     footer {visibility: hidden;}
-    /* Oculta o botão de recolhimento da sidebar para Operacionais */
-    .css-15tx69b { display: none; }
-    </style>
+    [data-testid="stToolbar"] {visibility: hidden !important;} 
+    [data-testid="stDecoration"] {visibility: hidden;} 
+    
+    /* 🔴 NOVO: Lógica para travar o sidebar do Operacional */
     """
     
-    # 🟢 NOVO: Se não for admin, injetamos CSS para travar a sidebar
     if not user_is_admin:
+        # Trava a sidebar aberta e oculta o botão para Operacionais
         hide_streamlit_style_app += """
         <style>
-        /* Desabilita o recolhimento/expansão total, travando a sidebar aberta */
-        [data-testid="stSidebar"] {
-            pointer-events: none;
-            user-select: none;
-        }
-        /* Oculta o botão de recolhimento, que não funcionaria */
-        [data-testid="stSidebarToggleButton"] {
-            visibility: hidden;
-        }
+        [data-testid="stSidebar"] { pointer-events: none; user-select: none; }
+        [data-testid="stSidebarToggleButton"] { visibility: hidden; }
         </style>
         """
 
@@ -310,7 +305,7 @@ def app_ui():
     
     st.set_page_config(page_title="Broadcaster Telegram | Equipe", layout="wide") 
     
-    # 🆕 1. LOGO E TÍTULO DA EMPRESA NO CANTO ESQUERDO DA SIDEBAR (FLUXO CORRIGIDO)
+    # 🆕 1. LOGO E TÍTULO DA EMPRESA NO CANTO ESQUERDO DA SIDEBAR
     st.sidebar.markdown(
         f'<div style="text-align: center; margin-bottom: 20px; border-bottom: 1px solid #d3d3d3; padding-bottom: 15px;">'
         f'<img src="https://raw.githubusercontent.com/charlevaz/telegram-broadcaster/main/cr.png" width="80" style="border-radius: 10px; box-shadow: 0 0 5px rgba(0,0,0,0.2);">'
@@ -326,8 +321,7 @@ def app_ui():
 
     # 🔴 NOVO: Botões renderizados na ordem correta
     
-    # Botão 1: Coletar IDs (Disponível apenas para Administrador ou Usuário Comum)
-    # Apenas o admin pode ver esse botão
+    # Botão 1: Coletar IDs (Apenas para Admin)
     if user_is_admin and st.sidebar.button("🤖 Coletar Novos IDs de Autorização", type="primary", use_container_width=True):
         coletar_ids_telegram()
         st.cache_data.clear() 
