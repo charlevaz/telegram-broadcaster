@@ -5,7 +5,6 @@ from google.oauth2.service_account import Credentials
 import pandas as pd
 import logging
 import json 
-import os
 from gspread.auth import DEFAULT_SCOPES 
 import uuid 
 from datetime import datetime, timedelta
@@ -32,7 +31,6 @@ CREDENTIALS_FILE = '/home/charle/scripts/chaveBigQuery.json'
 SHEET_ID = '1HSIwFfIr67i9K318DX1qTwzNtrJmaavLKUlDpW5C6xU' 
 WORKSHEET_NAME_TELEGRAM = 'lista_telegram' 
 WORKSHEET_NAME_AUTORIZACAO = 'autorizacao' # ⬅️ Nova aba para logs do fetcher
-WORKSHEET_NAME_ERRO = 'erro' # ⬅️ Aba para registrar erros de envio
 
 USER_CREDENTIALS = {
     "operação": "820628", 
@@ -49,39 +47,28 @@ if 'PERMANENT_LOGIN' not in st.session_state:
 # ====================================================================
 
 def get_gspread_client():
-    """Retorna o cliente gspread autenticado (Cloud via Secrets ou Local via JSON)."""
+    """Retorna o cliente gspread autenticado."""
+    
     try:
-        # 1. Tenta autenticar via Streamlit Secrets (Ideal para Cloud)
+        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        
         if 'google_service_account' in st.secrets:
-            creds_info = dict(st.secrets["google_service_account"])
-            
-            # Garante que a private_key tenha quebras de linha reais
-            pk = creds_info.get('private_key', '')
-            # Se a chave contém o literal \n (dois caracteres) em vez de newline real
-            if '\n' not in pk and '\\n' in repr(pk):
-                creds_info['private_key'] = pk.replace('\\n', '\n')
-            elif pk.count('\n') < 5:
-                # Chave PEM precisa de várias quebras de linha; tenta corrigir
-                creds_info['private_key'] = pk.replace('\\n', '\n')
-            
-            logger.info(f"Autenticando via Secrets - client_email: {creds_info.get('client_email', 'N/A')}")
-            creds = Credentials.from_service_account_info(creds_info, scopes=DEFAULT_SCOPES)
-            return gspread.authorize(creds)
-        
-        # 2. Tenta autenticar via arquivo local (Para servidor Ubuntu)
-        elif os.path.exists(CREDENTIALS_FILE):
-            logger.info(f"Autenticando via arquivo local: {CREDENTIALS_FILE}")
-            creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=DEFAULT_SCOPES)
-            return gspread.authorize(creds)
-        
+            # Autenticação via Streamlit Secrets (Cloud)
+            creds_info = dict(st.secrets["google_service_account"]) 
+            if isinstance(creds_info, dict):
+                 creds_info['private_key'] = creds_info['private_key'].replace('\\n', '\n')
+                 creds = Credentials.from_service_account_info(creds_info, scopes=DEFAULT_SCOPES)
+            else:
+                 creds = Credentials.from_service_account_info(json.loads(creds_info), scopes=DEFAULT_SCOPES)
         else:
-            logger.error("Nenhuma fonte de credenciais Google encontrada (Secrets ou JSON).")
-            st.error("Nenhuma credencial Google encontrada.")
-            return None
+            # Autenticação via arquivo local (Ubuntu Server)
+            creds = Credentials.from_json_keyfile_name(CREDENTIALS_FILE, scopes=DEFAULT_SCOPES)
             
+        return gspread.authorize(creds)
+        
     except Exception as e:
         logger.critical(f"Falha na Autenticação GSpread: {e}")
-        st.error(f"Erro de autenticação: {e}")
+        st.error(f"ERRO DE AUTENTICAÇÃO CRÍTICA: {e}") 
         return None
 
 @st.cache_data(ttl=300, show_spinner="Buscando listas...")
@@ -106,13 +93,11 @@ def carregar_listas_db(worksheet_name):
                 nome_lista = str(row['lista']).strip()
                 destinatario_id = str(row['ids']).strip()
                 nome_destinatario = str(row['nome']).strip()
-                var1 = str(row['var1']).strip() if 'var1' in df.columns else ''
-                var2 = str(row['var2']).strip() if 'var2' in df.columns else ''
                 
                 if nome_lista and destinatario_id:
                     if nome_lista not in DESTINATARIOS:
                         DESTINATARIOS[nome_lista] = []
-                    DESTINATARIOS[nome_lista].append({'id': destinatario_id, 'nome': nome_destinatario, 'var1': var1, 'var2': var2})
+                    DESTINATARIOS[nome_lista].append({'id': destinatario_id, 'nome': nome_destinatario})
             
             return DESTINATARIOS
         else:
@@ -148,12 +133,11 @@ def carregar_ids_autorizados():
         return set()
 
 
-def substituir_variaveis(mensagem_original, nome_destinatario, var1='', var2=''):
-    """Substitui as variáveis {nome}, {var1}, {var2} (ou @nome, @var1, @var2) na mensagem."""
+def substituir_variaveis(mensagem_original, nome_destinatario):
+    """Substitui as variáveis {nome} ou @nome na mensagem."""
     nome = nome_destinatario if nome_destinatario else "Cliente"
-    mensagem_processada = mensagem_original.replace("{nome}", nome).replace("@nome", nome)
-    mensagem_processada = mensagem_processada.replace("{var1}", var1).replace("@var1", var1)
-    mensagem_processada = mensagem_processada.replace("{var2}", var2).replace("@var2", var2)
+    mensagem_processada = mensagem_original.replace("{nome}", nome)
+    mensagem_processada = mensagem_original.replace("@nome", nome)
     return mensagem_processada
 
 # --- Funções de Envio de API ---
@@ -177,47 +161,6 @@ def enviar_foto_telegram_api(chat_id, foto_bytes, legenda_processada):
         response = requests.post(url, files=files, data=data); response.raise_for_status()
         return True, response.json()
     except requests.exceptions.RequestException as e: return False, str(e)
-
-
-# --- Função de Registro de Erros na Planilha ---
-
-def registrar_erros_planilha(erros_lista):
-    """Registra os erros de envio na aba 'erro' da planilha."""
-    if not erros_lista:
-        return
-    
-    try:
-        client = get_gspread_client()
-        if client is None:
-            logger.error("Não foi possível conectar ao Google Sheets para registrar erros.")
-            return
-        
-        sheet = client.open_by_key(SHEET_ID)
-        
-        # Tenta abrir a aba 'erro', cria se não existir
-        try:
-            ws_erro = sheet.worksheet(WORKSHEET_NAME_ERRO)
-        except gspread.WorksheetNotFound:
-            ws_erro = sheet.add_worksheet(title=WORKSHEET_NAME_ERRO, rows=1000, cols=4)
-            ws_erro.append_row(['data_hora', 'chat_id', 'nome', 'erro'])
-        
-        # Adiciona cada erro como uma linha
-        linhas = []
-        for erro_item in erros_lista:
-            linhas.append([
-                erro_item['data_hora'],
-                erro_item['chat_id'],
-                erro_item['nome'],
-                erro_item['erro']
-            ])
-        
-        if linhas:
-            ws_erro.append_rows(linhas, value_input_option='USER_ENTERED')
-            logger.info(f"{len(linhas)} erros registrados na aba '{WORKSHEET_NAME_ERRO}'.")
-    
-    except Exception as e:
-        logger.error(f"Falha ao registrar erros na planilha: {e}")
-        st.warning(f"⚠️ Não foi possível salvar os erros na planilha: {e}")
 
 
 # --- Funções de Disparo (Central) ---
@@ -247,7 +190,7 @@ def processar_disparo(listas_selecionadas, mensagem_original, uploaded_file, lis
     
     if not destinatarios: st.error("Nenhum destinatário autorizado encontrado para o envio."); return
 
-    total_enviados = 0; erros_display = []; erros_planilha = []
+    total_enviados = 0; erros = [];
     
     with st.spinner(f'Iniciando envio Telegram para {len(destinatarios)} destinatários...'):
         
@@ -255,22 +198,13 @@ def processar_disparo(listas_selecionadas, mensagem_original, uploaded_file, lis
         
         for i, dest in enumerate(destinatarios):
             chat_id = dest['id']; nome_destinatario = dest['nome']
-            var1 = dest.get('var1', ''); var2 = dest.get('var2', '')
-            mensagem_processada = substituir_variaveis(mensagem_original, nome_destinatario, var1, var2)
+            mensagem_processada = substituir_variaveis(mensagem_original, nome_destinatario)
             
             if file_bytes is not None: sucesso, resultado = enviar_foto_telegram_api(chat_id, file_bytes, mensagem_processada)
             else: sucesso, resultado = enviar_mensagem_telegram_api(chat_id, mensagem_processada)
             
-            if sucesso: 
-                total_enviados += 1
-            else: 
-                erros_display.append(f"ID {chat_id} ({nome_destinatario}): Falha -> {resultado}")
-                erros_planilha.append({
-                    'data_hora': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'chat_id': chat_id,
-                    'nome': nome_destinatario,
-                    'erro': str(resultado)
-                })
+            if sucesso: total_enviados += 1
+            else: erros.append(f"ID {chat_id} ({nome_destinatario}): Falha -> {resultado}"); 
             
             logger.info(f"FIM: Telegram para {chat_id}. Status: {'SUCESSO' if sucesso else 'FALHA'}")
 
@@ -279,12 +213,11 @@ def processar_disparo(listas_selecionadas, mensagem_original, uploaded_file, lis
 
     progress_bar.empty()
     st.success(f"✅ Disparo Telegram concluído! **{total_enviados}** mensagens enviadas com sucesso.")
-    logger.info(f"FIM DO DISPARO TELEGRAM: Enviados: {total_enviados}, Falhas: {len(erros_display)}")
+    logger.info(f"FIM DO DISPARO TELEGRAM: Enviados: {total_enviados}, Falhas: {len(erros)}")
     
-    if erros_display:
-        st.warning(f"⚠️ {len(erros_display)} falhas de envio. Registrando na aba 'erro' da planilha...")
-        for erro in erros_display[:3]: st.code(erro)
-        registrar_erros_planilha(erros_planilha)
+    if erros:
+        st.warning(f"⚠️ {len(erros)} falhas de envio. Detalhes no Log.")
+        for erro in erros[:3]: st.code(erro)
             
     return total_enviados
 
@@ -374,7 +307,7 @@ def app_ui():
 
     imediato_listas_selecionadas = st.multiselect("Selecione as Listas para Disparo:", nomes_listas_telegram, key="telegram_lists")
     imediato_uploaded_file = st.file_uploader("🖼️ Anexar Imagem (Opcional)", type=["png", "jpg", "jpeg"], key="telegram_img")
-    imediato_mensagem = st.text_area("📝 Mensagem para Disparo (Use {nome}, {var1}, {var2} ou @nome, @var1, @var2 para personalizar)", height=150, key="telegram_msg")
+    imediato_mensagem = st.text_area("📝 Mensagem para Disparo (Use {nome} ou @nome para personalizar)", height=150, key="telegram_msg")
     
     # Exibe aviso de filtro de autorização
     ids_autorizados = carregar_ids_autorizados()
