@@ -5,6 +5,7 @@ from google.oauth2.service_account import Credentials
 import pandas as pd
 import logging
 import json 
+import os
 from gspread.auth import DEFAULT_SCOPES 
 import uuid 
 from datetime import datetime, timedelta
@@ -50,29 +51,37 @@ if 'PERMANENT_LOGIN' not in st.session_state:
 def get_gspread_client():
     """Retorna o cliente gspread autenticado (Cloud via Secrets ou Local via JSON)."""
     try:
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        
         # 1. Tenta autenticar via Streamlit Secrets (Ideal para Cloud)
         if 'google_service_account' in st.secrets:
-            creds_info = dict(st.secrets["google_service_account"]) 
-            # Corrige quebras de linha na chave privada se necessário
-            if "\\n" in creds_info['private_key']:
-                creds_info['private_key'] = creds_info['private_key'].replace('\\n', '\n')
+            creds_info = dict(st.secrets["google_service_account"])
             
+            # Garante que a private_key tenha quebras de linha reais
+            pk = creds_info.get('private_key', '')
+            # Se a chave contém o literal \n (dois caracteres) em vez de newline real
+            if '\n' not in pk and '\\n' in repr(pk):
+                creds_info['private_key'] = pk.replace('\\n', '\n')
+            elif pk.count('\n') < 5:
+                # Chave PEM precisa de várias quebras de linha; tenta corrigir
+                creds_info['private_key'] = pk.replace('\\n', '\n')
+            
+            logger.info(f"Autenticando via Secrets - client_email: {creds_info.get('client_email', 'N/A')}")
             creds = Credentials.from_service_account_info(creds_info, scopes=DEFAULT_SCOPES)
             return gspread.authorize(creds)
         
-        # 2. Tenta autenticar via arquivo local (Para seu servidor Ubuntu)
+        # 2. Tenta autenticar via arquivo local (Para servidor Ubuntu)
         elif os.path.exists(CREDENTIALS_FILE):
-            creds = Credentials.from_json_keyfile_name(CREDENTIALS_FILE, scopes=DEFAULT_SCOPES)
+            logger.info(f"Autenticando via arquivo local: {CREDENTIALS_FILE}")
+            creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=DEFAULT_SCOPES)
             return gspread.authorize(creds)
         
         else:
             logger.error("Nenhuma fonte de credenciais Google encontrada (Secrets ou JSON).")
+            st.error("Nenhuma credencial Google encontrada.")
             return None
             
     except Exception as e:
         logger.critical(f"Falha na Autenticação GSpread: {e}")
+        st.error(f"Erro de autenticação: {e}")
         return None
 
 @st.cache_data(ttl=300, show_spinner="Buscando listas...")
