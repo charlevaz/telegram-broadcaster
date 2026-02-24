@@ -386,8 +386,8 @@ def app_ui():
     logout_button()
     st.sidebar.header("Configuração de Destinatários")
 
-    recarregar_lista = st.sidebar.button("🔄 Recarregar Dados da Planilha", type="secondary")
-    if recarregar_lista: st.cache_data.clear()
+    recarregar_lista = st.sidebar.button("🔄 Recarregar Dados da Planilha", type="primary", use_container_width=True)
+    if recarregar_lista: st.cache_data.clear(); st.rerun()
 
     # 1. CARREGA A LISTA DE DESTINATÁRIOS (Telegram)
     listas_telegram_data = carregar_listas_db(WORKSHEET_NAME_TELEGRAM)
@@ -401,22 +401,34 @@ def app_ui():
         st.error("Erro fatal: Colunas da lista TELEGRAM estão incorretas. Verifique 'lista', 'nome', 'ids'.")
         return 
     
-    
-    # --- FLUXO DE NOME DE LISTAS ---
+    # --- EXIBE QUANTIDADE DE IDs POR LISTA NA SIDEBAR ---
     nomes_listas_telegram = list(listas_telegram_data.keys()) if isinstance(listas_telegram_data, dict) else []
     
+    if nomes_listas_telegram:
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("📋 Listas disponíveis")
+        for nome_lista in nomes_listas_telegram:
+            qtd = len(listas_telegram_data[nome_lista])
+            st.sidebar.markdown(f"• **{nome_lista}**: `{qtd}` IDs")
+    
+    # Exibe aviso de filtro de autorização na sidebar
+    ids_autorizados = carregar_ids_autorizados()
+    st.sidebar.markdown("---")
+    st.sidebar.info(f"🔒 **{len(ids_autorizados)}** IDs autorizados (que iniciaram conversa com o bot)")
     
     # --- INTERFACE PRINCIPAL ---
     
     st.markdown('### <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Telegram_logo.svg/24px-Telegram_logo.svg.png" style="width:24px; vertical-align:middle;"> Disparo Telegram', unsafe_allow_html=True)
 
     imediato_listas_selecionadas = st.multiselect("Selecione as Listas para Disparo:", nomes_listas_telegram, key="telegram_lists")
+    
+    # Mostra resumo das listas selecionadas com contagem de IDs
+    if imediato_listas_selecionadas:
+        total_ids = sum(len(listas_telegram_data.get(n, [])) for n in imediato_listas_selecionadas)
+        st.success(f"📊 **{len(imediato_listas_selecionadas)}** lista(s) selecionada(s) — **{total_ids}** destinatários no total")
+    
     imediato_uploaded_file = st.file_uploader("🖼️ Anexar Imagem (Opcional)", type=["png", "jpg", "jpeg"], key="telegram_img")
     imediato_mensagem = st.text_area("📝 Mensagem para Disparo (Use {nome}, {var1}, {var2} ou @nome, @var1, @var2 para personalizar)", height=150, key="telegram_msg")
-    
-    # Exibe aviso de filtro de autorização
-    ids_autorizados = carregar_ids_autorizados()
-    st.info(f"Filtro: Apenas **{len(ids_autorizados)}** CHAT IDs que iniciaram conversa com o bot serão alcançados.")
 
     if st.button("🚀 Disparar Telegram Agora", key="btn_telegram", type="primary"):
         if not imediato_listas_selecionadas: st.error("Selecione pelo menos uma Lista."); return
