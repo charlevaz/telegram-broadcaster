@@ -344,10 +344,23 @@ def app_ui():
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
     [data-testid="stToolbar"] {visibility: hidden !important;} 
     [data-testid="stDecoration"] {visibility: hidden;}
-    /* Sidebar sempre expandida */
+    /* Sidebar sempre expandida - força abertura em todas versões do Streamlit */
     [data-testid="collapsedControl"] {display: none !important;}
-    section[data-testid="stSidebar"] {width: 300px !important; min-width: 300px !important;}
-    section[data-testid="stSidebar"] > div {width: 300px !important;}
+    button[kind="header"] {display: none !important;}
+    section[data-testid="stSidebar"] {
+        transform: none !important;
+        width: 21rem !important;
+        min-width: 21rem !important;
+        transition: none !important;
+        visibility: visible !important;
+    }
+    section[data-testid="stSidebar"] > div:first-child {
+        width: 21rem !important;
+    }
+    /* Ajusta o conteúdo principal para não sobrepor a sidebar */
+    .main .block-container {
+        padding-left: 1rem !important;
+    }
     </style>
     """
     st.markdown(hide_streamlit_style_app, unsafe_allow_html=True)
