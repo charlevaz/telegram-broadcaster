@@ -11,6 +11,8 @@ import uuid
 from datetime import datetime, timedelta
 import hashlib 
 
+
+st.set_page_config(page_title="Login - Broadcaster Telegram", layout="centered")
 # ====================================================================
 # 🚨 1. CONFIGURAÇÃO E LOGGING
 # ====================================================================
@@ -84,7 +86,7 @@ def get_gspread_client():
         st.error(f"Erro de autenticação: {e}")
         return None
 
-@@st.cache_data(ttl=300, show_spinner="Buscando listas...")
+@st.cache_data(ttl=300, show_spinner="Buscando listas...")
 def carregar_listas_db(worksheet_name):
     DESTINATARIOS = {} 
     try:
@@ -303,7 +305,7 @@ def login_form():
     """
     st.markdown(hide_streamlit_style_login, unsafe_allow_html=True)
     
-    st.set_page_config(page_title="Login - Broadcaster Telegram", layout="centered")
+    
     
     st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Telegram_logo.svg/100px-Telegram_logo.svg.png", width=100) 
     st.title("🛡️ Acesso Restrito")
