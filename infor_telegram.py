@@ -84,49 +84,46 @@ def get_gspread_client():
         st.error(f"Erro de autenticação: {e}")
         return None
 
-@st.cache_data(ttl=300, show_spinner="Buscando listas...")
+@@st.cache_data(ttl=300, show_spinner="Buscando listas...")
 def carregar_listas_db(worksheet_name):
-    """Carrega listas do Telegram."""
-    
     DESTINATARIOS = {} 
-    
     try:
         client = get_gspread_client()
         if client is None: return {"Erro de Conexão": "0"} 
-
-        sheet = client.open_by_key(SHEET_ID)
-        worksheet = sheet.worksheet(worksheet_name)
         
-        data = worksheet.get_all_records()
+        sheet = client.open_by_key(SHEET_ID).worksheet(worksheet_name)
+        data = sheet.get_all_records()
+        
+        if not data:
+            st.warning(f"A aba '{worksheet_name}' está vazia.")
+            return {}
+
         df = pd.DataFrame(data)
         
-        # Normaliza nomes das colunas (minúsculo e sem espaços extras)
+        # Normaliza os nomes das colunas para minúsculo para evitar erro de digitação
         df.columns = [str(c).strip().lower() for c in df.columns]
         
-        if 'lista' in df.columns and 'nome' in df.columns and 'ids' in df.columns:
-            
-            for index, row in df.iterrows():
-                nome_lista = str(row['lista']).strip()
-                destinatario_id = str(row['ids']).strip()
-                nome_destinatario = str(row['nome']).strip()
-                var1 = str(row['var1']).strip() if 'var1' in df.columns else ''
-                var2 = str(row['var2']).strip() if 'var2' in df.columns else ''
-                
-                if nome_lista and destinatario_id:
-                    if nome_lista not in DESTINATARIOS:
-                        DESTINATARIOS[nome_lista] = []
-                    DESTINATARIOS[nome_lista].append({'id': destinatario_id, 'nome': nome_destinatario, 'var1': var1, 'var2': var2})
-            
-            return DESTINATARIOS
-        else:
-            colunas_encontradas = list(df.columns)
-            st.error(f"ERRO DE COLUNAS na aba '{worksheet_name}'. Obrigatórias: 'lista', 'nome', 'ids'. Encontradas: {colunas_encontradas}")
-            return {"Erro de Colunas": "0"}
+        # Garante colunas de variáveis extras (mesmo que vazias)
+        for col in ['lista', 'nome', 'ids', 'var1', 'var2']:
+            if col not in df.columns: df[col] = ""
 
+        for _, row in df.iterrows():
+            nome_lista = str(row['lista']).strip()
+            dest_id = str(row['ids']).strip()
+            
+            if nome_lista and dest_id:
+                if nome_lista not in DESTINATARIOS: DESTINATARIOS[nome_lista] = []
+                DESTINATARIOS[nome_lista].append({
+                    'id': dest_id, 
+                    'nome': str(row['nome']).strip(),
+                    'var1': str(row['var1']).strip(),
+                    'var2': str(row['var2']).strip()
+                })
+        return DESTINATARIOS
     except Exception as e:
-        st.error(f"ERRO NA LEITURA DA PLANILHA '{worksheet_name}': {e}") 
-        logger.critical(f"Falha ao carregar a lista de destinatários ({worksheet_name}): {e}")
-        return {"Erro de Conexão": "0"}
+        st.error(f"ERRO DE COLUNAS na aba '{worksheet_name}'. Verifique se a primeira linha tem: lista, nome, ids")
+        logger.error(f"Erro detalhado: {e}")
+        return {}
 
 @st.cache_data(ttl=600, show_spinner="Verificando autorizações...")
 def carregar_ids_autorizados():
