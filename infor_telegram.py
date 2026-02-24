@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import hashlib 
 
 
-st.set_page_config(page_title="Login - Broadcaster Telegram", layout="centered")
+st.set_page_config(page_title="Broadcaster Telegram", layout="wide")
 # ====================================================================
 # 🚨 1. CONFIGURAÇÃO E LOGGING
 # ====================================================================
@@ -93,21 +93,31 @@ def carregar_listas_db(worksheet_name):
         client = get_gspread_client()
         if client is None: return {"Erro de Conexão": "0"} 
         
-        sheet = client.open_by_key(SHEET_ID).worksheet(worksheet_name)
-        data = sheet.get_all_records()
+        ws = client.open_by_key(SHEET_ID).worksheet(worksheet_name)
         
-        if not data:
-            st.warning(f"A aba '{worksheet_name}' está vazia.")
+        # Usa get_all_values (mais robusto que get_all_records)
+        all_values = ws.get_all_values()
+        
+        if len(all_values) < 2:
+            st.warning(f"A aba '{worksheet_name}' está vazia ou só tem cabeçalho.")
             return {}
-
-        df = pd.DataFrame(data)
         
-        # Normaliza os nomes das colunas para minúsculo para evitar erro de digitação
-        df.columns = [str(c).strip().lower() for c in df.columns]
+        # Primeira linha = cabeçalhos, resto = dados
+        headers = [str(h).strip().lower() for h in all_values[0]]
+        df = pd.DataFrame(all_values[1:], columns=headers)
+        
+        # Mapeia va1->var1 e va2->var2 caso a planilha use esses nomes
+        rename_map = {}
+        if 'va1' in headers and 'var1' not in headers: rename_map['va1'] = 'var1'
+        if 'va2' in headers and 'var2' not in headers: rename_map['va2'] = 'var2'
+        if rename_map: df.rename(columns=rename_map, inplace=True)
         
         # Garante colunas de variáveis extras (mesmo que vazias)
         for col in ['lista', 'nome', 'ids', 'var1', 'var2']:
             if col not in df.columns: df[col] = ""
+        
+        logger.info(f"Colunas encontradas na aba '{worksheet_name}': {headers}")
+        logger.info(f"Linhas de dados: {len(df)}")
 
         for _, row in df.iterrows():
             nome_lista = str(row['lista']).strip()
@@ -123,7 +133,7 @@ def carregar_listas_db(worksheet_name):
                 })
         return DESTINATARIOS
     except Exception as e:
-        st.error(f"ERRO DE COLUNAS na aba '{worksheet_name}'. Verifique se a primeira linha tem: lista, nome, ids")
+        st.error(f"ERRO ao ler aba '{worksheet_name}': {e}")
         logger.error(f"Erro detalhado: {e}")
         return {}
 
@@ -328,17 +338,19 @@ def logout_button():
 
 def app_ui():
     
-    # 🪄 CSS GERAL: Oculta todos os elementos visuais indesejados
+    # 🪄 CSS GERAL: Oculta elementos indesejados + Sidebar sempre visível
     hide_streamlit_style_app = """
     <style>
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
     [data-testid="stToolbar"] {visibility: hidden !important;} 
-    [data-testid="stDecoration"] {visibility: hidden;} 
+    [data-testid="stDecoration"] {visibility: hidden;}
+    /* Sidebar sempre expandida */
+    [data-testid="collapsedControl"] {display: none !important;}
+    section[data-testid="stSidebar"] {width: 300px !important; min-width: 300px !important;}
+    section[data-testid="stSidebar"] > div {width: 300px !important;}
     </style>
     """
     st.markdown(hide_streamlit_style_app, unsafe_allow_html=True)
-    
-    st.set_page_config(page_title="Broadcaster Telegram | Equipe", layout="wide") 
     
     # 🆕 LOGO NO CANTO ESQUERDO DA SIDEBAR (usando HTML/Markdown)
     st.sidebar.markdown(
