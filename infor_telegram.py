@@ -161,12 +161,22 @@ def carregar_ids_autorizados():
         return set()
 
 
+def escapar_markdown(texto):
+    """Escapa caracteres especiais do Markdown do Telegram nos valores das variáveis."""
+    # Caracteres que o Telegram Markdown v1 interpreta: _ * ` [
+    for char in ['_', '*', '`', '[']:
+        texto = texto.replace(char, f'\\{char}')
+    return texto
+
 def substituir_variaveis(mensagem_original, nome_destinatario, var1='', var2=''):
-    """Substitui as variáveis {nome}, {var1}, {var2} (ou @nome, @var1, @var2) na mensagem."""
-    nome = nome_destinatario if nome_destinatario else "Cliente"
+    """Substitui as variáveis {nome}, {var1}, {var2} (ou @nome, @var1, @var2) na mensagem.
+    Os valores das variáveis são escapados para evitar conflitos com Markdown do Telegram."""
+    nome = escapar_markdown(nome_destinatario) if nome_destinatario else "Cliente"
+    v1   = escapar_markdown(var1) if var1 else ''
+    v2   = escapar_markdown(var2) if var2 else ''
     mensagem_processada = mensagem_original.replace("{nome}", nome).replace("@nome", nome)
-    mensagem_processada = mensagem_processada.replace("{var1}", var1).replace("@var1", var1)
-    mensagem_processada = mensagem_processada.replace("{var2}", var2).replace("@var2", var2)
+    mensagem_processada = mensagem_processada.replace("{var1}", v1).replace("@var1", v1)
+    mensagem_processada = mensagem_processada.replace("{var2}", v2).replace("@var2", v2)
     return mensagem_processada
 
 # --- Funções de Envio de API ---
