@@ -161,6 +161,70 @@ def carregar_ids_autorizados():
         return set()
 
 
+def buscar_ids_telegram():
+    """Busca todos os chat_ids de quem interagiu com o bot via getUpdates e salva na aba 'autorizacao'."""
+    try:
+        # 1. Busca atualizações do bot Telegram
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+        response = requests.get(url, params={'offset': 0, 'limit': 100})
+        response.raise_for_status()
+        data = response.json()
+        
+        if not data.get('ok'):
+            st.error("Falha ao buscar atualizações do bot Telegram.")
+            return 0
+        
+        # 2. Extrai todos os chat_ids únicos das mensagens
+        novos_ids = {}
+        for update in data.get('result', []):
+            msg = update.get('message', {})
+            chat = msg.get('chat', {})
+            chat_id = str(chat.get('id', '')).strip()
+            if chat_id:
+                first_name = chat.get('first_name', '')
+                last_name = chat.get('last_name', '')
+                username = chat.get('username', '')
+                nome = f"{first_name} {last_name}".strip() or username or chat_id
+                novos_ids[chat_id] = nome
+        
+        if not novos_ids:
+            st.info("Nenhuma atualização nova encontrada no bot.")
+            return 0
+        
+        # 3. Conecta na planilha e compara com IDs existentes
+        client = get_gspread_client()
+        if client is None: return 0
+        
+        sheet = client.open_by_key(SHEET_ID)
+        
+        try:
+            ws_auth = sheet.worksheet(WORKSHEET_NAME_AUTORIZACAO)
+        except gspread.WorksheetNotFound:
+            ws_auth = sheet.add_worksheet(title=WORKSHEET_NAME_AUTORIZACAO, rows=1000, cols=2)
+            ws_auth.append_row(['ID_CHAT', 'NOME'])
+        
+        # IDs que já existem na planilha
+        ids_existentes = set(str(i).strip() for i in ws_auth.col_values(1)[1:] if str(i).strip())
+        
+        # 4. Filtra apenas IDs novos
+        ids_para_adicionar = []
+        for chat_id, nome in novos_ids.items():
+            if chat_id not in ids_existentes:
+                ids_para_adicionar.append([chat_id, nome])
+        
+        # 5. Adiciona os novos
+        if ids_para_adicionar:
+            ws_auth.append_rows(ids_para_adicionar, value_input_option='USER_ENTERED')
+            logger.info(f"{len(ids_para_adicionar)} novos IDs adicionados à aba '{WORKSHEET_NAME_AUTORIZACAO}'.")
+        
+        return len(ids_para_adicionar)
+    
+    except Exception as e:
+        logger.error(f"Erro ao buscar IDs do Telegram: {e}")
+        st.error(f"Erro ao buscar IDs: {e}")
+        return 0
+
+
 def escapar_markdown(texto):
     """Escapa caracteres especiais do Markdown do Telegram nos valores das variáveis."""
     # Caracteres que o Telegram Markdown v1 interpreta: _ * ` [
@@ -388,6 +452,17 @@ def app_ui():
 
     recarregar_lista = st.sidebar.button("🔄 Recarregar Dados da Planilha", type="primary", use_container_width=True)
     if recarregar_lista: st.cache_data.clear(); st.rerun()
+
+    # Botão para buscar novos IDs autorizados do Telegram
+    buscar_novos = st.sidebar.button("📥 Buscar Novos IDs Autorizados", type="secondary", use_container_width=True)
+    if buscar_novos:
+        with st.spinner("Buscando IDs do Telegram..."):
+            qtd_novos = buscar_ids_telegram()
+        if qtd_novos > 0:
+            st.sidebar.success(f"✅ {qtd_novos} novo(s) ID(s) adicionado(s)!")
+            st.cache_data.clear()
+        else:
+            st.sidebar.info("Nenhum ID novo encontrado.")
 
     # 1. CARREGA A LISTA DE DESTINATÁRIOS (Telegram)
     listas_telegram_data = carregar_listas_db(WORKSHEET_NAME_TELEGRAM)
